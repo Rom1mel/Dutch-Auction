@@ -1,84 +1,157 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
+
+//Import token contracts to interact with them.
 import "./MyToken.sol";
 import "./MyNFT.sol";
+// Import OpenZeppelin's IERC721Receiver for safe NFT transfers.
 import  "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
+/**
+    * @title The main contract implementing the Dutch auction.
+    * @author Rom1mel.
+    * @notice Allows users to sell their NFTs and customize each lot in detail.
+    * @dev Main contract of the project
+*/
+
 contract Auction is IERC721Receiver{
+    /**
+     * @dev Token contract instances.
+     */
     EducationToken contractEDU;
     NFTsLot lotNFTContract;
-    //owner's address
-    address public owner;
-    //lot storage
-    mapping(uint256 => Lot) public lots;
-    //commission when adding lot
-    uint256 public addingFee;
-    //commission when purchasing a lot
-    uint256 public fee;
-    
-    uint256 internal lotId;
 
+    /**
+     * @dev Contract state variables
+     */
+    address public owner; // The address of the contract owner
+    mapping(uint256 => Lot) public lots; // Storage for all auction lots
+    uint256 public addingFee; // Platform commission (in EDU tokens) for adding a new lot
+    uint256 public fee; // Platform commission (in EDU tokens) for purchasing a lot
+    /**
+     * @dev Increases by 1 when a new lot is added. Represents the total number of lots created.
+     */
+    uint256 internal lotId; // Current lot identifier counter
+
+    /**
+     * @dev Structure representing an auction lot
+     */
     struct Lot{
-        uint256 lotNFTsID;
-        address lotOwner;
-        uint256 beginPrice;
-        uint256 discount;
-        uint256 periodOfDiscount;
-        uint256 timeStemp;
-        uint256 timeToEnd;
-        address buyer;
-        uint256 finalPrice;
+        uint256 lotNFTsID; // ID of the NFT being auctioned
+        address lotOwner; // Address of the lot creator (seller)
+        uint256 beginPrice;  // Starting price of the lot (in EDU tokens)
+        uint256 discount; // Price decrease per discount period (in EDU tokens)
+        uint256 periodOfDiscount; // Duration of one discount period (in seconds)
+        uint256 timeStemp; // The timestamp when the lot was created
+        uint256 timeToEnd; // Total auction duration (in seconds)
+        address buyer; // Address of the buyer (zero address if not sold)
+        uint256 finalPrice; // Final purchase price (in EDU tokens, zero if not sold)
     }
 
-    error PriceCantBeZero();
-    error FeeCantBeZero();
-    error RezultDiscountMoreThenBefinPrice();
-    error LotDoesNotExsist();
-    error LotIsEnd();
-    error BalanceIsZero();
-    error LackOfFaunds();
-    error YouAreNotOwner();
-    error YouDontHaveThisNFT(uint256);
-    error NotApproved();
+    /**
+     * @dev Custom errors to better understand the reasons for transaction reverts.
+     */
+    error PriceCantBeZero(); // Lot price cannot be zero
+    error FeeCantBeZero();  // Platform fee cannot be zero
+    error RezultDiscountMoreThenBefinPrice(); // Total discount exceeds starting price
+    error LotDoesNotExsist(); // Requested lot ID does not exist
+    error LotIsEnd(); // The auction for this lot has already ended
+    error BalanceIsZero(); // Platform has zero balance of required token
+    error LackOfFaunds(); // The user does not have enough tokens in their balance
+    error YouAreNotOwner(); // Caller is not the contract owner
+    error YouDontHaveThisNFT(uint256); // The user does not own this NFT
+    error NotApproved(); // Token transfer has not been approved for this contract
 
+    /**
+     * @dev Events for tracking contract activity
+    */
     event LotAdded(uint256 indexed lotId, address lotOwner, uint256 indexed beginPrice, uint256 timeStemp);
     event LotBought(uint256 indexed lotId, address buyer, uint256 indexed finalPrice, uint256 timeStemp);
 
+    /**
+     * @dev Modifier to restrict function access to contract owner only
+    */
     modifier onlyOwner {
         require(msg.sender == owner, YouAreNotOwner());
         _;
     }
 
+    /** 
+        * @dev Sets the contract owner to the person who deployed it.
+        * It also sets and verifies the correctness of commissions for buying and creating lots.
+        * @param _fee Platform commission for buying lots (in EDU tokens)
+        * @param _addingFee Platform commission for adding new lots (in EDU tokens)
+    */
     constructor (uint256 _fee, uint256 _addingFee){
         require(_fee!=0 && _addingFee!=0, FeeCantBeZero());
         owner = msg.sender;
         addingFee = _addingFee; 
         fee = _fee; 
-    }
+    } 
     
+    /**
+     * @return uint256 The current platform commission for purchasing a lot (in EDU tokens)
+     */
     function getFee() public view returns(uint256){
         return fee;
     }
+
+    /**
+     * @return address The owner's address
+     */
     function getOwner() public view returns(address){
         return owner;
     }
+
+    /**
+     * @return uint256 The current platform commission for creating a lot (in EDU tokens)
+     */
     function getAddingFee() public view returns(uint256){
         return addingFee;
     }
+
+    /**
+     * @dev Calculates the current price of the lot: 
+     * starting price - ((current timestamp - lot creation timestamp) / discount period) * discount per period.
+     * @param _lotId Identifier of the lot of interest
+     * @return uint256 The current price of the lot (in EDU tokens)
+     */
     function getCurrentPrice(uint256 _lotId) public view returns(uint256){
-        require(_lotId <= lotId, LotDoesNotExsist());
-        require(lots[_lotId].buyer == address(0), LotIsEnd());
+        require(_lotId <= lotId, LotDoesNotExsist()); // Checking the correctness of the argument
+        //TODO: Create a separate function for viewing and calculating the price of a lot.
+        require(lots[_lotId].buyer == address(0), LotIsEnd()); // Checking that the lot is not finished 
         return lots[_lotId].beginPrice - ((block.timestamp - lots[_lotId].timeStemp)/lots[_lotId].periodOfDiscount * lots[_lotId].discount);
     }
 
+    /**
+     * @return uint256 The total number of lots created (last assigned lot ID)
+     */
     function getAuctionNumber() public view returns(uint256){
         return lotId;
     }
+    
+    /**
+     * @param _lotId Identifier of the lot of interest
+     * @return lot A structure containing complete information about a lot
+     */
     function getLot(uint256 _lotId) public view returns(Lot memory){
         require(_lotId <= lotId, LotDoesNotExsist());
         return lots[_lotId];
     }
 
+    /**
+     * @notice Creates a lot and puts the NFT up for sale. Charges a commission.
+     * @dev Adds the created lot to the lots mapping. Transfers the sold NFT and the fee to contract balance.
+     * Requires token approval for both NFT and EDU tokens.
+     * @param _usersNFT ID of the NFT listed for sale
+     * @param _beginPrice Starting price of the lot (in EDU tokens)
+     * @param _discount Price decrease per discount period (in EDU tokens)
+     * @param _periodOfDiscount Duration of one discount period (in seconds)
+     * @param _timeToEnd Total auction duration (in seconds)
+     * @return lotId The identifier of the newly created lot
+     */
+    //TODO: Refund NFTs if the lot was not purchased
+    //TODO: Give the user the opportunity to remove the lot from sale
     function addLot(uint256 _usersNFT, uint256 _beginPrice, uint256 _discount, uint256 _periodOfDiscount, uint256 _timeToEnd) external returns(uint256) {
         require(lotNFTContract.ownerOf(_usersNFT) == msg.sender, YouDontHaveThisNFT(_usersNFT));
         require(lotNFTContract.getApproved(_usersNFT) == address(this), NotApproved());
@@ -103,11 +176,21 @@ contract Auction is IERC721Receiver{
         return lotId - 1;
     }
     
+    /**
+     * @dev Checks if the lot is finished: the auction time has expired or the lot has been purchased.
+     * @param _lotId Identifier of the lot of interest
+     * @return bool True if the auction has ended, false otherwise
+     */
     function lotIsEnd(uint256 _lotId) internal view returns(bool){
         return block.timestamp - lots[_lotId].timeStemp > lots[_lotId].timeToEnd || lots[_lotId].buyer != address(0);
     }
 
-
+    /**
+     * @notice Purchase of NFT listed as part of the lot using EDU tokens.
+     * @dev Transfers the buyer's EDU tokens (price + fee) and the purchased NFT to the buyer. 
+     * Requires token approval for EDU tokens. Marks the lot as purchased and emits an event.
+     * @param _lotId Identifier of the lot being purchased
+     */
     function buyLot(uint256 _lotId) external{
         require(_lotId <= lotId, LotDoesNotExsist());
         require(!lotIsEnd(_lotId), LotIsEnd());
