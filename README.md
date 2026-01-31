@@ -13,17 +13,19 @@ Bids are made with EducationToken (ERC20)
 Platform collects fees on successful auctions
 
 🏗️ Architecture
-text
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│  NFTsLot    │    │   Auction   │    │ Education   │
-│  (ERC721)   │◄───┤   (Core)    │───►│   Token     │
-└─────────────┘    └─────────────┘    └─────────────┘
-       │                    │                    │
-       └────────────────────┼────────────────────┘
-                            ▼
-                    ┌─────────────┐
-                    │   Users     │
-                    └─────────────┘
+```ascii
+            ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+            │   NFTsLot   │     │   Auction   │     │  Education  │
+            │  (ERC721)   │◄────┤   (Core)    │────►│   Token     │
+            └─────────────┘     └─────────────┘     └─────────────┘
+                                        │
+                                        │
+                    ┌───────────────────┼───────────────────┐
+                                        ▼
+                                ┌─────────────┐
+                                │    Users    │
+                                └─────────────┘
+```
 
 🛡️ Development Status
 ✅ Core functionality implemented
