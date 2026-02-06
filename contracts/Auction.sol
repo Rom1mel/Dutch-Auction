@@ -47,19 +47,23 @@ contract Auction is IERC721Receiver{
         address buyer; // Address of the buyer (zero address if not sold)
         uint256 finalPrice; // Final purchase price (in EDU tokens, zero if not sold)
     }
+    enum lotStatus {
+        active, sold, canceled, expired
+    }
 
     /**
      * @dev Custom errors to better understand the reasons for transaction reverts.
      */
     error PriceCantBeZero(); // Lot price cannot be zero
+    error PriceCantBeUint256Max(); // Lot price cannot be uint256Max
     error FeeCantBeZero();  // Platform fee cannot be zero
     error AddressCantBeZero(); //Token address cannot be zero
     error RezultDiscountMoreThenBefinPrice(); // Total discount exceeds starting price
     error LotDoesNotExsist(); // Requested lot ID does not exist
-    error LotIsEnd(); // The auction for this lot has already ended
+    error IncorrectActionForLotStatus(lotStatus, lotStatus); // Еhe action is not possible due to the current status of the lot (current status, required status)
     error BalanceIsZero(); // Platform has zero balance of required token
     error LackOfFaunds(); // The user does not have enough tokens in their balance
-    error YouAreNotOwner(); // Caller is not the contract owner
+    error YouAreNotOwner(); // Caller is not the contract owner or lot owner
     error YouDontHaveThisNFT(uint256); // The user does not own this NFT
     error NotApproved(); // Token transfer has not been approved for this contract
 
@@ -68,6 +72,7 @@ contract Auction is IERC721Receiver{
     */
     event LotAdded(uint256 indexed lotId, address lotOwner, uint256 indexed beginPrice, uint256 timeStemp);
     event LotBought(uint256 indexed lotId, address buyer, uint256 indexed finalPrice, uint256 timeStemp);
+    event LotCanceled(uint256 indexed lotId, uint256 timeStemp);
 
     /**
      * @dev Modifier to restrict function access to contract owner only
@@ -145,7 +150,7 @@ contract Auction is IERC721Receiver{
      * @dev Adds the created lot to the lots mapping. Transfers the sold NFT and the fee to contract balance.
      * Requires token approval for both NFT and EDU tokens.
      * @param _usersNFT ID of the NFT listed for sale. Еhe user must own and approve the NFT
-     * @param _beginPrice Starting price of the lot (in EDU tokens). cannot be equal to 0
+     * @param _beginPrice Starting price of the lot (in EDU tokens). Cannot be equal to 0 and Uint256Max
      * @param _discount Price decrease per discount period (in EDU tokens)
      * @param _periodOfDiscount Duration of one discount period (in seconds)
      * @param _timeToEnd Total auction duration (in seconds)
@@ -161,6 +166,7 @@ contract Auction is IERC721Receiver{
         require(contractEDU.allowance(msg.sender, address(this)) >= addingFee, NotApproved());
 
         require(_beginPrice > 0, PriceCantBeZero());
+        require(_beginPrice != type(uint256).max, PriceCantBeUint256Max());
         // Checking that the price will not go negative due to an excessive discount.
         require(_timeToEnd/_periodOfDiscount*_discount < _beginPrice, RezultDiscountMoreThenBefinPrice());
         //Change of contract states.
@@ -177,17 +183,7 @@ contract Auction is IERC721Receiver{
         lotId++;
 
         return lotId - 1;
-    }
-    
-    /**
-     * @dev Checks if the lot is finished: the auction time has expired or the lot has been purchased.
-     * @param _lotId Identifier of the lot of interest
-     * @return bool True if the auction has ended, false otherwise
-     */
-    function lotIsEnd(uint256 _lotId) internal view returns(bool){
-        return block.timestamp - lots[_lotId].timeStemp > lots[_lotId].timeToEnd || lots[_lotId].buyer != address(0);
-    }
-
+    } 
     /**
      * @notice Purchase of NFT listed as part of the lot using EDU tokens.
      * @dev Transfers the buyer's EDU tokens (price + fee) and the purchased NFT to the buyer. 
@@ -210,6 +206,43 @@ contract Auction is IERC721Receiver{
         lotNFTContract.safeTransferFrom(address(this), msg.sender, lots[_lotId].lotNFTsID);
         //Сreating a lot purchase event.
         emit LotBought(_lotId, msg.sender, finalPriceOfLot, block.timestamp);
+    }
+    function cancelLot(uint256 _lotId) external{
+        require(_lotId <= lotId, LotDoesNotExsist());
+        require(!lotIsEnd(_lotId), LotIsEnd());
+        require(msg.sender == lots[_lotId].lotOwner, YouAreNotOwner());
+
+        lots[_lotId].beginPrice = type(uint256).max;
+        _returnNFT(_lotId, msg.sender);
+
+        emit LotCanceled(_lotId, block.timestamp);
+    }
+    function takeNFT(uint256 _lotId) external{
+        require(_lotId <= lotId, LotDoesNotExsist());
+        require(lotIsEnd(_lotId) == lotStatus.expired , NFTsCantBeReturned(lotIsEnd(_lotId)));
+
+    }
+    /**
+     * @dev Checks if the lot is finished: the auction time has expired or the lot has been purchased.
+     * @param _lotId Identifier of the lot of interest
+     * @return bool True if the auction has ended, false otherwise
+     */
+    function _lotStatus(uint256 _lotId) internal view returns(lotStatus){
+        if(lots[_lotId].beginPrice == type(uint256).max){
+            return lotStatus.canceled;
+        } 
+        else if(block.timestamp - lots[_lotId].timeStemp > lots[_lotId].timeToEnd){
+            return lotStatus.expired;
+        } 
+        else if(lots[_lotId].buyer != address(0)){
+            return lotStatus.sold;
+        }
+        else{
+            return lotStatus.active;
+        }
+    }
+    function _returnNFT(uint256 _lotId, address _ownerOfLot) internal {
+        lotNFTContract.safeTransferFrom(address(this), _ownerOfLot, lots[_lotId].lotNFTsID);
     }
     /**
      * @dev Sets a new commission when purchasing a lot. Available only to the owner.
