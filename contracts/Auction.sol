@@ -53,6 +53,7 @@ contract Auction is IERC721Receiver{
      */
     error PriceCantBeZero(); // Lot price cannot be zero
     error FeeCantBeZero();  // Platform fee cannot be zero
+    error AddressCantBeZero(); //Token address cannot be zero
     error RezultDiscountMoreThenBefinPrice(); // Total discount exceeds starting price
     error LotDoesNotExsist(); // Requested lot ID does not exist
     error LotIsEnd(); // The auction for this lot has already ended
@@ -143,34 +144,36 @@ contract Auction is IERC721Receiver{
      * @notice Creates a lot and puts the NFT up for sale. Charges a commission.
      * @dev Adds the created lot to the lots mapping. Transfers the sold NFT and the fee to contract balance.
      * Requires token approval for both NFT and EDU tokens.
-     * @param _usersNFT ID of the NFT listed for sale
-     * @param _beginPrice Starting price of the lot (in EDU tokens)
+     * @param _usersNFT ID of the NFT listed for sale. Еhe user must own and approve the NFT
+     * @param _beginPrice Starting price of the lot (in EDU tokens). cannot be equal to 0
      * @param _discount Price decrease per discount period (in EDU tokens)
      * @param _periodOfDiscount Duration of one discount period (in seconds)
      * @param _timeToEnd Total auction duration (in seconds)
-     * @return lotId The identifier of the newly created lot
+     * @return lotId The identifier of the newly created lot.
      */
     //TODO: Refund NFTs if the lot was not purchased
     //TODO: Give the user the opportunity to remove the lot from sale
     function addLot(uint256 _usersNFT, uint256 _beginPrice, uint256 _discount, uint256 _periodOfDiscount, uint256 _timeToEnd) external returns(uint256) {
         require(lotNFTContract.ownerOf(_usersNFT) == msg.sender, YouDontHaveThisNFT(_usersNFT));
         require(lotNFTContract.getApproved(_usersNFT) == address(this), NotApproved());
-
+        //Checking the buyer's approval and balance.
         require(contractEDU.balanceOf(msg.sender) >= addingFee, LackOfFaunds());
         require(contractEDU.allowance(msg.sender, address(this)) >= addingFee, NotApproved());
 
         require(_beginPrice > 0, PriceCantBeZero());
+        // Checking that the price will not go negative due to an excessive discount.
         require(_timeToEnd/_periodOfDiscount*_discount < _beginPrice, RezultDiscountMoreThenBefinPrice());
-
-        contractEDU.transferFrom(msg.sender, address(this), addingFee);
-        lotNFTContract.safeTransferFrom(msg.sender, address(this), _usersNFT);
-
+        //Change of contract states.
         address adressNull;
         uint256 finalPriceNull;
         Lot memory _lot = Lot(_usersNFT, msg.sender, _beginPrice, _discount, _periodOfDiscount, block.timestamp, _timeToEnd, adressNull, finalPriceNull);
         lots[lotId] = _lot;
-
+        //charging a commission and transferring the NFT to the auction balance
+        contractEDU.transferFrom(msg.sender, address(this), addingFee);
+        lotNFTContract.safeTransferFrom(msg.sender, address(this), _usersNFT);
+        //Сreating a lot create event.
         emit LotAdded(lotId, msg.sender, _beginPrice, block.timestamp);
+        //Сhanging the state variable responsible for the ID of the next lot.
         lotId++;
 
         return lotId - 1;
@@ -189,50 +192,73 @@ contract Auction is IERC721Receiver{
      * @notice Purchase of NFT listed as part of the lot using EDU tokens.
      * @dev Transfers the buyer's EDU tokens (price + fee) and the purchased NFT to the buyer. 
      * Requires token approval for EDU tokens. Marks the lot as purchased and emits an event.
-     * @param _lotId Identifier of the lot being purchased
+     * @param _lotId Identifier of the lot being purchased. The lot must exist and must not be completed.
      */
     function buyLot(uint256 _lotId) external{
         require(_lotId <= lotId, LotDoesNotExsist());
         require(!lotIsEnd(_lotId), LotIsEnd());
         uint256 finalPriceOfLot = getCurrentPrice(_lotId);
-
+        //Checking the buyer's approval and balance.
         require(contractEDU.balanceOf(msg.sender) >= fee + finalPriceOfLot, LackOfFaunds());
         require(contractEDU.allowance(msg.sender, address(this)) >= fee + finalPriceOfLot, NotApproved());
-
-        contractEDU.transferFrom(msg.sender, address(this), fee);
-        contractEDU.transferFrom(msg.sender, lots[_lotId].lotOwner, finalPriceOfLot);
-
+        //Change of contract states.
         lots[_lotId].buyer = msg.sender;
         lots[_lotId].finalPrice = finalPriceOfLot;
-
+        //Charging a commission and payment. Transferring the NFT to the buyer.
+        contractEDU.transferFrom(msg.sender, address(this), fee);
+        contractEDU.transferFrom(msg.sender, lots[_lotId].lotOwner, finalPriceOfLot);
         lotNFTContract.safeTransferFrom(address(this), msg.sender, lots[_lotId].lotNFTsID);
-
+        //Сreating a lot purchase event.
         emit LotBought(_lotId, msg.sender, finalPriceOfLot, block.timestamp);
     }
-
+    /**
+     * @dev Sets a new commission when purchasing a lot. Available only to the owner.
+     * @param newFee New commission when purchasing a lot. Cannot be equal to zero
+     */
     function setFee(uint256 newFee) external onlyOwner{
         require(newFee!=0, FeeCantBeZero());
         fee = newFee;
     }
+    /**
+     * @dev Sets a new commission when creating a lot. Available only to the owner.
+     * @param newFee New commission when creating a lot. Cannot be equal to zero
+     */
     function setAddingFee(uint256 newFee) external onlyOwner{
         require(newFee!=0, FeeCantBeZero());
         addingFee = newFee;
     }
 
+    /**
+     * @dev Transfers the selected amount of earned commissions to the owner's address.
+     * @param value Amount to be transferred to the owner's balance.
+     * You cannot select 0 or an amount greater than the current contract balance to transfer.
+     */
     function wisdrow(uint256 value) external onlyOwner{
         require(contractEDU.balanceOf(address(this)) != 0, BalanceIsZero());
         require(contractEDU.balanceOf(address(this)) >= value, LackOfFaunds());
         contractEDU.transfer(owner, value);
     }
+    /**
+     * @dev Transfers the all of earned commissions to the owner's address. The contract balance must be greater than 0
+     */
     function wisdrowAll() external onlyOwner{
         require(contractEDU.balanceOf(address(this)) != 0, BalanceIsZero());
         contractEDU.transfer(owner, contractEDU.balanceOf(address(this)));
     }
-
+    /**
+     * @dev Сreates instances of token contracts to interact with them.
+     * @param _EDU ERC20 token address. Cannot be 0.
+     * @param _EDU ERC721 token address. Cannot be 0.
+     */
+    // TODO: Check that the address belongs to the contract. Make it impossible to change the address if there are active lots
     function setTokensAddress(address _EDU, address _NFT) external onlyOwner{
+        require(_EDU != address(0) && _NFT != address(0), AddressCantBeZero());
         contractEDU = EducationToken(_EDU);
         lotNFTContract = NFTsLot(_NFT);
     }
+    /**
+     * @dev Allows contract to accept safe NFT transfers.
+     */
     function onERC721Received(address operator, address from, uint256 tokenId, bytes calldata data) external pure returns (bytes4){
         return IERC721Receiver.onERC721Received.selector;
     }
