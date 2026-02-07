@@ -70,6 +70,8 @@ contract Auction is IERC721Receiver{
     error YouAreNotOwner(); // Caller is not the contract owner or lot owner
     error YouDontHaveThisNFT(uint256); // The user does not own this NFT
     error NotApproved(); // Token transfer has not been approved for this contract
+    error BalanceMustBeZero(); // When changing the tokens with which the contract interacts, the balance of old tokens must be zero.
+
     /**
      * @dev Events for tracking contract activity
     */
@@ -88,14 +90,22 @@ contract Auction is IERC721Receiver{
     /** 
         * @dev Sets the contract owner to the person who deployed it.
         * It also sets and verifies the correctness of commissions for buying and creating lots.
+        * Сreates instances of token contracts to interact with them.
+        * Checks if the specified addresses are contract addresses.
         * @param _fee Platform commission for buying lots (in EDU tokens)
         * @param _addingFee Platform commission for adding new lots (in EDU tokens)
+        * @param _EDU ERC20 token address. Cannot be 0.
+        * @param _EDU ERC721 token address. Cannot be 0.
     */
-    constructor (uint256 _fee, uint256 _addingFee){
+    constructor (uint256 _fee, uint256 _addingFee, address _EDU, address _NFT){
         require(_fee!=0 && _addingFee!=0, FeeCantBeZero());
+        require(_EDU != address(0) && _NFT != address(0), AddressCantBeZero());
         owner = msg.sender;
         addingFee = _addingFee; 
-        fee = _fee; 
+        fee = _fee;
+        EDUContract = EducationToken(_EDU);
+        NFTContract = NFTsLot(_NFT);
+        require(address(NFTContract).code.length != 0 && address(EDUContract).code.length != 0);
     } 
     
     /**
@@ -308,17 +318,6 @@ contract Auction is IERC721Receiver{
     function wisdrowAll() external onlyOwner{
         require(EDUContract.balanceOf(address(this)) != 0, BalanceIsZero());
         EDUContract.transfer(owner, EDUContract.balanceOf(address(this)));
-    }
-    /**
-     * @dev Сreates instances of token contracts to interact with them.
-     * @param _EDU ERC20 token address. Cannot be 0.
-     * @param _EDU ERC721 token address. Cannot be 0.
-     */
-    // TODO: Check that the address belongs to the contract. Make it impossible to change the address if there are active lots
-    function setTokensAddress(address _EDU, address _NFT) external onlyOwner{
-        require(_EDU != address(0) && _NFT != address(0), AddressCantBeZero());
-        EDUContract = EducationToken(_EDU);
-        NFTContract = NFTsLot(_NFT);
     }
     /**
      * @dev Allows contract to accept safe NFT transfers.
