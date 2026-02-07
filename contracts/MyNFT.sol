@@ -11,7 +11,7 @@ contract NFTsLot is ERC721, Ownable {
         Ownable(initialOwner)
     {}
 
-    function safeMint(uint256 tokenId) public {
+    function safeMint(uint256 tokenId) public onlyOwner{
         _safeMint(msg.sender, tokenId);
     }
 }
