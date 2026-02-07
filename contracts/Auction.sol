@@ -6,6 +6,9 @@ import "./MyToken.sol";
 import "./MyNFT.sol";
 // Import OpenZeppelin's IERC721Receiver for safe NFT transfers.
 import  "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+// Import OpenZeppelin's IERC721 and ERC165 for check that the entered address is the address of the contract implementing ERC721
+import  "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import  "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 
 /**
     * @title The main contract implementing the Dutch auction.
@@ -14,7 +17,7 @@ import  "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
     * @dev Main contract of the project
 */
 
-contract Auction is IERC721Receiver{
+contract Auction is IERC721Receiver, ERC165{
     /**
      * @dev Token contract instances.
      */
@@ -71,6 +74,8 @@ contract Auction is IERC721Receiver{
     error YouDontHaveThisNFT(uint256); // The user does not own this NFT
     error NotApproved(); // Token transfer has not been approved for this contract
     error BalanceMustBeZero(); // When changing the tokens with which the contract interacts, the balance of old tokens must be zero.
+    error NotAContract(address, address); //The addresses passed to the constructor are not contracts.
+    error NotAERC721(address); //The address passed to the constructor does not implement ERC721.
 
     /**
      * @dev Events for tracking contract activity
@@ -95,7 +100,8 @@ contract Auction is IERC721Receiver{
         * @param _fee Platform commission for buying lots (in EDU tokens)
         * @param _addingFee Platform commission for adding new lots (in EDU tokens)
         * @param _EDU ERC20 token address. Cannot be 0.
-        * @param _EDU ERC721 token address. Cannot be 0.
+        * @param _NFT ERC721 token address. Cannot be 0. 
+        * A check is performed to determine whether the contract is an implementation of the standard ERC721.
     */
     constructor (uint256 _fee, uint256 _addingFee, address _EDU, address _NFT){
         require(_fee!=0 && _addingFee!=0, FeeCantBeZero());
@@ -105,7 +111,8 @@ contract Auction is IERC721Receiver{
         fee = _fee;
         EDUContract = EducationToken(_EDU);
         NFTContract = NFTsLot(_NFT);
-        require(address(NFTContract).code.length != 0 && address(EDUContract).code.length != 0);
+        require(address(NFTContract).code.length != 0 && address(EDUContract).code.length != 0, NotAContract(_EDU,_NFT));
+        require(NFTContract.supportsInterface(type(IERC721).interfaceId) == true, NotAERC721(_NFT));
     } 
     
     /**
@@ -324,5 +331,8 @@ contract Auction is IERC721Receiver{
      */
     function onERC721Received(address operator, address from, uint256 tokenId, bytes calldata data) external pure returns (bytes4){
         return IERC721Receiver.onERC721Received.selector;
+    }
+    function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
+        return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC721Receiver).interfaceId;
     }
 }
