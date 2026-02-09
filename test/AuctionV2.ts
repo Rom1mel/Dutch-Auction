@@ -10,7 +10,7 @@ const { viem } = await network.connect();
 
 async function simpleDeployment(){  //deployment and creation of contract instances.
     const publicClient = await viem.getPublicClient()
-    const [owner, user] = await viem.getWalletClients()
+    const [owner, user, buyer] = await viem.getWalletClients()
     const admin = await viem.getTestClient()
     const deployNFT = await viem.deployContract("NFTsLot", [owner.account?.address as `0x${string}`]) 
     const deployToken = await viem.deployContract("EducationToken",["Education", "EDU"])
@@ -25,13 +25,13 @@ async function simpleDeployment(){  //deployment and creation of contract instan
     client: { public: publicClient, wallet: user }
     });
     const tokenForOwner = await getContract({
-    address: deployNFT.address,
-    abi: deployNFT.abi,
+    address: deployToken.address,
+    abi: deployToken.abi,
     client: { public: publicClient, wallet: owner }
     });
     const tokenForUser = await getContract({
-    address: deployNFT.address,
-    abi: deployNFT.abi,
+    address: deployToken.address,
+    abi: deployToken.abi,
     client: { public: publicClient, wallet: user }
     });
     const deployAuction = await viem.deployContract("Auction",
@@ -46,7 +46,34 @@ async function simpleDeployment(){  //deployment and creation of contract instan
         abi: deployAuction.abi,
         client: { public: publicClient, wallet: owner}
     })
-    return { publicClient, owner, user, admin ,auctionForOwner, auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser} //created instances of contracts and accounts.
+    return { publicClient, owner, user, buyer, admin ,auctionForOwner,
+    auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser } //created instances of contracts and accounts.
+}
+async function deploymentWithLot(){ // Deploys contracts and adds the lot to the auction and user balances.
+    const { publicClient, owner, user, buyer, admin ,auctionForOwner,
+    auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser } = await networkHelpers.loadFixture(simpleDeployment)
+    const auctionForBuyer = await getContract({
+        address: auctionForOwner.address,
+        abi: auctionForOwner.abi,
+        client: {public: publicClient, wallet: buyer}
+    })
+    const tokenForBuyer = await getContract({
+        address: tokenForOwner.address,
+        abi: tokenForOwner.abi,
+        client: {public: publicClient, wallet: buyer}
+    })
+    const nftForBuyer = await getContract({
+        address: nftForOwner.address,
+        abi: nftForOwner.abi,
+        client: {public: publicClient, wallet: buyer}
+    })
+    await tokenForOwner.write.mint([user.account.address, 10000n])
+    await tokenForOwner.write.mint([buyer.account.address, 10000n])
+    await nftForOwner.write.safeMint([11n])
+    await nftForOwner.write.safeTransferFrom([owner.account.address, user.account.address, 11n])
+    return { publicClient, owner, user, buyer, admin ,auctionForOwner,
+    auctionForUser, auctionForBuyer, tokenForOwner, tokenForUser,
+    tokenForBuyer, nftForOwner, nftForUser, nftForBuyer }
 }
 
 describe("befor adding lot", async function(){  //Сhecking the initial state of the contract.
