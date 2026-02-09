@@ -11,6 +11,7 @@ const { viem } = await network.connect();
 async function simpleDeployment(){  //deployment and creation of contract instances.
     const publicClient = await viem.getPublicClient()
     const [owner, user] = await viem.getWalletClients()
+    const admin = await viem.getTestClient()
     const deployNFT = await viem.deployContract("NFTsLot", [owner.account?.address as `0x${string}`]) 
     const deployToken = await viem.deployContract("EducationToken",["Education", "EDU"])
     const nftForOwner = await getContract({
@@ -45,59 +46,33 @@ async function simpleDeployment(){  //deployment and creation of contract instan
         abi: deployAuction.abi,
         client: { public: publicClient, wallet: owner}
     })
-    return { auctionForOwner, auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser} //created instances of contracts.
+    return { publicClient, owner, user, admin ,auctionForOwner, auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser} //created instances of contracts and accounts.
 }
 
 describe("befor adding lot", async function(){  //Сhecking the initial state of the contract.
-    const publicClient = await viem.getPublicClient()
-    const [owner, user] = await viem.getWalletClients()
-    const admin = await viem.getTestClient()
-    it("Correct Feeses", async function () {
-        const {auctionForOwner, auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser } = await networkHelpers.loadFixture(simpleDeployment)
+    it("Correct Feeses", async function () { // Сhecking the fees set by the constructor
+        const {auctionForOwner } = await networkHelpers.loadFixture(simpleDeployment)
         assert.equal(await auctionForOwner.read.getFee(), 1000n)
         assert.equal(await auctionForOwner.read.getAddingFee(), 100n)
       })
-      it("Correct owner", async function(){
-        const auction = await viem.deployContract("Auction",[1000n, 100n]);
-        const realOwner = await publicClient.readContract({
-          address: auction.address,
-          abi: auction.abi,
-          functionName: 'getOwner',
-          args: [],
-        })
-        assert.ok(isAddressEqual(owner.account.address, realOwner));
+      it("Correct owner", async function(){ // Сhecking the owner set by the constructor
+        const {auctionForOwner, owner } = await networkHelpers.loadFixture(simpleDeployment)
+        assert.ok(isAddressEqual(await auctionForOwner.read.getOwner(), owner.account.address));
       })
-      it('Set Fee', async function(){
-        const defaultAuction = await viem.deployContract("Auction",[1000n, 100n]);
-        const auction = await getContract({
-          address: defaultAuction.address,
-          abi: defaultAuction.abi,
-          client: {public: publicClient, wallet: owner}
-        })
-        await auction.write.setFee([10000n]);
-        await auction.write.setAddingFee([1000n]);
-        const readingFee = await auction.read.getFee();
-        const readingAddingFee = await auction.read.getAddingFee();
-        assert.equal(readingFee, 10000n);
-        assert.equal(readingAddingFee,1000n);
+      it('Set Fee', async function(){  //Checking that the owner can change the fees.
+        const {auctionForOwner} = await networkHelpers.loadFixture(simpleDeployment)
+        await auctionForOwner.write.setFee([5000n])
+        await auctionForOwner.write.setAddingFee([6000n])
+        assert.equal(await auctionForOwner.read.getFee(), 5000n,);
+        assert.equal(await auctionForOwner.read.getAddingFee(), 6000n,);
       })
-      it('Not Owner Cant Set Fee And AddingFee', async function(){
-        const deployAuction = await viem.deployContract("Auction",[1000n, 100n]);
-        const auction = await getContract({
-          address: deployAuction.address,
-          abi: deployAuction.abi,
-          client: {public: publicClient, wallet: user}
-        })
+      it('Not Owner Cant Set Fee And AddingFee', async function(){ //Checking that the user can't change the fees.
+        const {auctionForUser} = await networkHelpers.loadFixture(simpleDeployment)
         let errorCause;
         try {
-          await publicClient.simulateContract({
-            address: deployAuction.address,
-            abi: deployAuction.abi,
-            functionName: 'setFee',
-            account: user.account.address,
-            args: [1000000n]
-          })
-        } catch (err){
+          await auctionForUser.write.setFee([50n])
+          }
+        catch (err){
           if (err instanceof BaseError){
             const revertEror = err.walk(err => err instanceof ContractFunctionExecutionError);
             if (revertEror instanceof ContractFunctionExecutionError) {
@@ -108,13 +83,7 @@ describe("befor adding lot", async function(){  //Сhecking the initial state of
         assert.ok(errorCause?.includes('YouAreNotOwner()'));
         errorCause = '';
         try{
-          await publicClient.simulateContract({
-            address: auction.address,
-            abi: auction.abi,
-            functionName: 'setAddingFee',
-            account: user.account.address,
-            args: [10n]
-          })
+          await auctionForUser.write.setAddingFee([40n])
         } catch (err) {
           if (err instanceof BaseError){
             errorCause = err.details;
