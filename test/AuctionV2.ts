@@ -8,26 +8,54 @@ import hre from "hardhat";
 const { networkHelpers } = await hre.network.connect()
 const { viem } = await network.connect();
 
-describe("befor adding lot", async function(){
+async function simpleDeployment(){  //deployment and creation of contract instances.
+    const publicClient = await viem.getPublicClient()
+    const [owner, user] = await viem.getWalletClients()
+    const deployNFT = await viem.deployContract("NFTsLot", [owner.account?.address as `0x${string}`]) 
+    const deployToken = await viem.deployContract("EducationToken",["Education", "EDU"])
+    const nftForOwner = await getContract({
+    address: deployNFT.address,
+    abi: deployNFT.abi,
+    client: { public: publicClient, wallet: owner }
+    });
+    const nftForUser = await getContract({
+    address: deployNFT.address,
+    abi: deployNFT.abi,
+    client: { public: publicClient, wallet: user }
+    });
+    const tokenForOwner = await getContract({
+    address: deployNFT.address,
+    abi: deployNFT.abi,
+    client: { public: publicClient, wallet: owner }
+    });
+    const tokenForUser = await getContract({
+    address: deployNFT.address,
+    abi: deployNFT.abi,
+    client: { public: publicClient, wallet: user }
+    });
+    const deployAuction = await viem.deployContract("Auction",
+    [1000n, 100n, deployToken.address, deployNFT.address] as [bigint, bigint, `0x${string}`, `0x${string}`])
+    const auctionForOwner = await getContract({
+        address: deployAuction.address,
+        abi: deployAuction.abi,
+        client: { public: publicClient, wallet: owner} 
+    })
+    const auctionForUser = await getContract({
+        address: deployAuction.address,
+        abi: deployAuction.abi,
+        client: { public: publicClient, wallet: owner}
+    })
+    return { auctionForOwner, auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser} //created instances of contracts.
+}
+
+describe("befor adding lot", async function(){  //Сhecking the initial state of the contract.
     const publicClient = await viem.getPublicClient()
     const [owner, user] = await viem.getWalletClients()
     const admin = await viem.getTestClient()
     it("Correct Feeses", async function () {
-        const auction = await viem.deployContract("Auction",[1000n, 100n]);
-        const realFee = await publicClient.readContract({
-          address: auction.address,
-          abi: auction.abi,
-          functionName: 'getFee',
-          args: [],
-        })
-        const realAddingFee = await publicClient.readContract({
-          address: auction.address,
-          abi: auction.abi,
-          functionName: 'getAddingFee',
-          args: [],
-        })
-        assert.equal(realFee, 1000n);
-        assert.equal(realAddingFee,100n)
+        const {auctionForOwner, auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser } = await networkHelpers.loadFixture(simpleDeployment)
+        assert.equal(await auctionForOwner.read.getFee(), 1000n)
+        assert.equal(await auctionForOwner.read.getAddingFee(), 100n)
       })
       it("Correct owner", async function(){
         const auction = await viem.deployContract("Auction",[1000n, 100n]);
