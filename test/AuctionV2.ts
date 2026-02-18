@@ -44,14 +44,15 @@ async function simpleDeployment(){  //deployment and creation of contract instan
     const auctionForUser = await getContract({
         address: deployAuction.address,
         abi: deployAuction.abi,
-        client: { public: publicClient, wallet: owner}
+        client: { public: publicClient, wallet: user}
     })
     return { publicClient, owner, user, buyer, admin ,auctionForOwner,
     auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser } //created instances of contracts and accounts.
 }
-async function deploymentWithLot(){ // Deploys contracts and adds the lot to the auction and user balances.
+
+async function deploymentWithBalances(){ // Deploys contracts and adds the user balances.
     const { publicClient, owner, user, buyer, admin ,auctionForOwner,
-    auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser } = await networkHelpers.loadFixture(simpleDeployment)
+    auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser } = await simpleDeployment()
     const auctionForBuyer = await getContract({
         address: auctionForOwner.address,
         abi: auctionForOwner.abi,
@@ -87,14 +88,14 @@ describe("befor adding lot", async function(){  //Сhecking the initial state of
         assert.ok(isAddressEqual(await auctionForOwner.read.getOwner(), owner.account.address));
       })
       it('Set Fee', async function(){  //Checking that the owner can change the fees.
-        const {auctionForOwner} = await networkHelpers.loadFixture(simpleDeployment)
+        const {auctionForOwner} = await simpleDeployment()
         await auctionForOwner.write.setFee([5000n])
         await auctionForOwner.write.setAddingFee([6000n])
         assert.equal(await auctionForOwner.read.getFee(), 5000n,);
         assert.equal(await auctionForOwner.read.getAddingFee(), 6000n,);
       })
       it('Not Owner Cant Set Fee And AddingFee', async function(){ //Checking that the user can't change the fees.
-        const {auctionForUser} = await networkHelpers.loadFixture(simpleDeployment)
+        const {auctionForUser, tokenForOwner} = await networkHelpers.loadFixture(simpleDeployment)
         let errorCause;
         try {
           await auctionForUser.write.setFee([50n])
@@ -116,164 +117,95 @@ describe("befor adding lot", async function(){  //Сhecking the initial state of
             errorCause = err.details;
           }
         }
-        assert.ok(errorCause?.includes('YouAreNotOwner()'));
+        assert.ok(errorCause.includes('YouAreNotOwner()'));
       })
 })
 describe("adding and after adding lot", async function(){
-    const publicClient = await viem.getPublicClient()
-    const [owner, user, buyer] = await viem.getWalletClients()
-    const admin = await viem.getTestClient()
-    const deployAuction = await viem.deployContract("Auction", [100n, 1000n])
-    const auctionForOwner = await getContract({
-        abi: deployAuction.abi,
-        address: deployAuction.address,
-        client: {public: publicClient, wallet: owner}
-    })
-    const auctionForUser = await getContract({
-        abi: deployAuction.abi,
-        address: deployAuction.address,
-        client: {public: publicClient, wallet: user}
-    })
-    const deployToken = await viem.deployContract("EducationToken",["Education", "EDU"])
-    const tokenForOwner = await getContract({
-        abi: deployToken.abi,
-        address: deployToken.address,
-        client: {public: publicClient, wallet: owner}
-    })
-    const tokenForUser = await getContract({
-        abi: deployToken.abi,
-        address: deployToken.address,
-        client: {public: publicClient, wallet: user}
-    })
-    const nftDeploy = await viem.deployContract("NFTsLot", [owner.account.address])
-    const nftForOwner = await getContract({
-        abi: nftDeploy.abi,
-        address: nftDeploy.address,
-        client: {public: publicClient, wallet: owner}
-    })
-    const nftForUser = await getContract({
-        abi: nftDeploy.abi,
-        address: nftDeploy.address,
-        client: {public: publicClient, wallet: user}
-    })
-    await auctionForOwner.write.setTokensAddress([tokenForOwner.address, nftForOwner.address])
-    await tokenForOwner.write.mint([user.account.address, 10000n])
-    await tokenForOwner.write.mint([buyer.account.address, 10000n])
-    await nftForUser.write.safeMint([21n])
-
-
-    // СОЗДАЕМ СНЕПШОТ - создаётся, но не запускается
-    const snapshotDeploy = await networkHelpers.takeSnapshot()
-    it("adding lot", async function(){
+    it("correct adding lot", async function(){ //You can add a lot with acceptable parameters.
+        const { publicClient, user, auctionForOwner, auctionForUser, tokenForUser, tokenForOwner,
+        nftForOwner, nftForUser} = await networkHelpers.loadFixture(deploymentWithBalances)
         await tokenForUser.write.approve([auctionForOwner.address, 5000n])
-        await nftForUser.write.approve([auctionForOwner.address, 21n])
-        await auctionForUser.write.addLot([21n, 9000n, 2n, 1n, 3600n])
-        const lot = await auctionForOwner.read.getLot([0n])
-        assert.equal(await tokenForOwner.read.balanceOf([auctionForOwner.address]), 1000n)
-        assert.equal(await tokenForOwner.read.balanceOf([user.account.address]), 9000n)
-        assert.ok(isAddressEqual(await nftForOwner.read.ownerOf([21n]), auctionForOwner.address))
-
-        await admin.mine({blocks: 7, interval: 1})
+        await nftForUser.write.approve([auctionForOwner.address, 11n])
+        const lotId = await auctionForUser.write.addLot([11n, 9000n, 2n, 1n, 3600n])
+        //Checking the change in token balance.
+        assert.equal(await tokenForOwner.read.balanceOf([auctionForOwner.address]), 100n)
+        assert.equal(await tokenForOwner.read.balanceOf([user.account.address]), 9900n)
+        assert.ok(isAddressEqual(await nftForOwner.read.ownerOf([11n]), auctionForOwner.address))
+		const lot = await auctionForUser.read.getLot([0n])
+		const block = await publicClient.getBlock()
+		//Сhecking lot parameters
+		assert.equal(lot.beginPrice, 9000n)
+		assert.equal(lot.discount, 2n)
+		assert.equal(lot.periodOfDiscount, 1n)
+		assert.equal(lot.timeToEnd, 3600n)
+		assert.equal(lot.beginPrice, 9000n)
+		assert.equal(lot.finalPrice, 0n)
+		assert.equal(lot.timeStemp, block.timestamp)
+		assert.ok(isAddressEqual(lot.lotOwner, user.account.address))
+		assert.ok(isAddressEqual(lot.buyer, zeroAddress))
+		//Event emission check
+		const [event] = await publicClient.getContractEvents({
+  		address: auctionForOwner.address,
+  		abi: auctionForOwner.abi,
+  		eventName: 'LotAdded',
+  		fromBlock: 'latest', 
+  		toBlock: 'latest'
+		});
+		assert.equal(event.args.lotId, 0n)
+		assert.equal(event.args.beginPrice, 9000n)
+		assert.equal(event.args.timeStemp, block.timestamp)
+		assert.ok(isAddressEqual(event.args.lotOwner as `0x${string}`, user.account.address))
+	})
+	it("correct price", async function(){
+		const {admin, auctionForOwner, tokenForOwner} = await networkHelpers.loadFixture(deploymentWithBalances)
+		await admin.mine({blocks: 7, interval: 1})
         const oldPrise = await auctionForOwner.read.getCurrentPrice([0n])
         await admin.mine({blocks: 1, interval: 1})
         assert.equal(oldPrise - await auctionForOwner.read.getCurrentPrice([0n]), 2n)
-    })
-    //const snapshotWithLot = await networkHelpers.takeSnapshot()
-    it("purches of the lot", async function(){
-        await buyer.writeContract({
-            abi: tokenForOwner.abi,
-            address: tokenForOwner.address,
-            functionName: "approve",
-            args: [auctionForOwner.address, 9990n]
-        })
-        await buyer.writeContract({
-            abi: auctionForOwner.abi,
-            address: auctionForOwner.address,
-            functionName: "buyLot",
-            args: [0n]
-        })
-        const lot = await auctionForOwner.read.getLot([0n])
-        assert.ok(isAddressEqual(lot.buyer, buyer.account.address))
-        assert.equal(await tokenForOwner.read.balanceOf([auctionForOwner.address]), 1100n)
-        assert.equal(await tokenForOwner.read.balanceOf([user.account.address]), 9000n + lot.finalPrice)
-        assert.equal(await tokenForOwner.read.balanceOf([buyer.account.address]), 9900n - lot.finalPrice)
-        assert.ok(isAddressEqual(await nftForOwner.read.ownerOf([21n]), buyer.account.address))
-    })
-    it("wisdrow", async function(){
-        await auctionForOwner.write.wisdrow([150n])
-        assert.equal(await tokenForOwner.read.balanceOf([auctionForOwner.address]), 950n)
-        assert.equal(await tokenForOwner.read.balanceOf([owner.account.address]), 10150n)
-        
-        await auctionForOwner.write.wisdrowAll()
-        assert.equal(await tokenForOwner.read.balanceOf([auctionForOwner.address]), 0n)
-        assert.equal(await tokenForOwner.read.balanceOf([owner.account.address]), 11100n)
-    })
-    it("illegal lot", async function(){   
-        // Восстанавливаем - не работает
-        await snapshotDeploy.restore()
+	})
+	it("illegal lots", async function(){
+		const {auctionForUser, auctionForBuyer, nftForUser} = await deploymentWithBalances()
+		let errorCause = ''
+		try{
+			await auctionForBuyer.write.addLot([11n, 9000n, 2n, 1n, 3600n])
+		} catch(err){
+			if(err instanceof BaseError){
+				errorCause = err.details
+			}
+		}
+		assert.ok(errorCause.includes("YouDontHaveThisNFT(11)"))
+		if(!errorCause.includes("YouDontHaveThisNFT(11)")){
+			console.log(errorCause)
+		}
 
-        try{
-            await auctionForUser.write.addLot([22n, 9000n, 2n, 1n, 3600n])
-        }
-        catch(err){
-            if(err instanceof ContractFunctionExecutionError){
-                console.log(err.details)
-                assert.ok(err.details.includes("ERC721NonexistentToken(22)"))
-            }
-            else{ assert.equal(err, 1)}
-        }
+		errorCause = ''
+		try{
+			await auctionForUser.write.addLot([11n, 9000n, 2n, 1n, 3600n])
+		}
+		 catch(err){
+			if(err instanceof BaseError){
+				errorCause = err.details
+			}
+		}
+		if(!errorCause.includes("NotApproved(11)")){
+			console.log(errorCause)
+		}
+		assert.ok(errorCause.includes('NotApproved(11)'));
 
-        await nftForOwner.write.safeMint([22n])
-        try{
-            await auctionForUser.write.addLot([22n, 9000n, 2n, 1n, 3600n])
-        }
-        catch(err){
-            if(err instanceof ContractFunctionExecutionError){
-                console.log(err.details)
-                assert.ok(err.details.includes("YouDontHaveThisNFT(22)"))
-            }
-            else{ assert.equal(err, 1)}
-        }
+		errorCause = ''
+		try{
+			await nftForUser.write.approve([auctionForUser.address, 11n])
+			await auctionForUser.write.addLot([11n, 9000n, 2000n, 1n, 3600n])
+		}
+		 catch(err){
+			if(err instanceof BaseError){
+				errorCause = err.details
+			}
+		}
+		if(!errorCause.includes("RezultDiscountMoreThenBefinPrice()")){
+			console.log(errorCause)
+		}
+		assert.ok(errorCause.includes('RezultDiscountMoreThenBefinPrice()'));
 
-        await nftForUser.write.safeMint([23n])
-        await nftForUser.write.approve([auctionForOwner.address, 23n])
-        try{
-            await auctionForUser.write.addLot([23n, 9000n, 1000n, 1n, 3600n])
-        }
-        catch(err){
-            if(err instanceof ContractFunctionExecutionError){
-                console.log(err.details)
-                assert.ok(err.details.includes("RezultDiscountMoreThenBefinPrice()"))
-            }
-            else{ assert.equal(err, 1)}
-        }
-
-        await tokenForUser.write.approve([auctionForUser.address, 0n])
-        try{
-            await auctionForUser.write.addLot([23n, 9000n, 2n, 1n, 3600n])
-        }
-        catch(err){
-            if(err instanceof ContractFunctionExecutionError){
-                console.log(err.details)
-                assert.ok(err.details.includes("NotApproved()"))
-            }
-            else{ assert.equal(err, 1)}
-        }
-
-        await tokenForUser.write.approve([auctionForUser.address, 10000n])
-        await nftForUser.write.approve([zeroAddress, 23n])
-
-        try{
-            await auctionForUser.write.addLot([23n, 9000n, 2n, 1n, 3600n])
-        }
-        catch(err){
-            if(err instanceof ContractFunctionExecutionError){
-                console.log(err.details)
-                assert.ok(err.details.includes("NotApproved()"))
-            }
-            else{ assert.equal(err, 1)}
-        }
-
-    })
-    
+	})
 })

@@ -72,7 +72,7 @@ contract Auction is IERC721Receiver, ERC165{
     error LackOfFaunds(); // The user does not have enough tokens in their balance
     error YouAreNotOwner(); // Caller is not the contract owner or lot owner
     error YouDontHaveThisNFT(uint256); // The user does not own this NFT
-    error NotApproved(); // Token transfer has not been approved for this contract
+    error NotApproved(uint256); // Token transfer has not been approved for this contract (NFTsId or token amount)
     error BalanceMustBeZero(); // When changing the tokens with which the contract interacts, the balance of old tokens must be zero.
     error NotAContract(address, address); //The addresses passed to the constructor are not contracts.
     error NotAERC721(address); //The address passed to the constructor does not implement ERC721.
@@ -187,10 +187,10 @@ contract Auction is IERC721Receiver, ERC165{
      */
     function addLot(uint256 _usersNFT, uint256 _beginPrice, uint256 _discount, uint256 _periodOfDiscount, uint256 _timeToEnd) external returns(uint256) {
         require(NFTContract.ownerOf(_usersNFT) == msg.sender, YouDontHaveThisNFT(_usersNFT));
-        require(NFTContract.getApproved(_usersNFT) == address(this), NotApproved());
+        require(NFTContract.getApproved(_usersNFT) == address(this), NotApproved(_usersNFT));
         //Checking the buyer's approval and balance.
         require(EDUContract.balanceOf(msg.sender) >= addingFee, LackOfFaunds());
-        require(EDUContract.allowance(msg.sender, address(this)) >= addingFee, NotApproved());
+        require(EDUContract.allowance(msg.sender, address(this)) >= addingFee, NotApproved(addingFee));
 
         require(_beginPrice > 0, PriceCantBeZero());
         require(_beginPrice != type(uint256).max, PriceCantBeUint256Max());
@@ -223,7 +223,7 @@ contract Auction is IERC721Receiver, ERC165{
         uint256 finalPriceOfLot = _price(_lotId);
         //Checking the buyer's approval and balance.
         require(EDUContract.balanceOf(msg.sender) >= fee + finalPriceOfLot, LackOfFaunds());
-        require(EDUContract.allowance(msg.sender, address(this)) >= fee + finalPriceOfLot, NotApproved());
+        require(EDUContract.allowance(msg.sender, address(this)) >= fee + finalPriceOfLot, NotApproved(fee + finalPriceOfLot));
         //Change of contract states.
         lots[_lotId].buyer = msg.sender;
         lots[_lotId].finalPrice = finalPriceOfLot;
