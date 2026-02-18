@@ -7,6 +7,7 @@ import hre from "hardhat";
 
 const { networkHelpers } = await hre.network.connect()
 const { viem } = await network.connect();
+const MAX_UINT256 = 2n ** 256n - 1n;
 
 async function simpleDeployment(){  //deployment and creation of contract instances.
     const publicClient = await viem.getPublicClient()
@@ -156,56 +157,103 @@ describe("adding and after adding lot", async function(){
 		assert.equal(event.args.timeStemp, block.timestamp)
 		assert.ok(isAddressEqual(event.args.lotOwner as `0x${string}`, user.account.address))
 	})
-	it("correct price", async function(){
+	it("correct price", async function(){  // Checking that the price decreases over time.
 		const {admin, auctionForOwner, tokenForOwner} = await networkHelpers.loadFixture(deploymentWithBalances)
 		await admin.mine({blocks: 7, interval: 1})
         const oldPrise = await auctionForOwner.read.getCurrentPrice([0n])
         await admin.mine({blocks: 1, interval: 1})
         assert.equal(oldPrise - await auctionForOwner.read.getCurrentPrice([0n]), 2n)
 	})
-	it("illegal lots", async function(){
-		const {auctionForUser, auctionForBuyer, nftForUser} = await deploymentWithBalances()
+	it("illegal lots", async function(){ //Checking scenarios where a user cannot add a lot.
+		const {auctionForUser, auctionForBuyer, nftForUser, tokenForUser} = await deploymentWithBalances()
 		let errorCause = ''
 		try{
 			await auctionForBuyer.write.addLot([11n, 9000n, 2n, 1n, 3600n])
-		} catch(err){
+		} catch(err){  //You cannot list an NFT that is not yours for sale.
 			if(err instanceof BaseError){
 				errorCause = err.details
+				assert.ok(errorCause.includes("YouDontHaveThisNFT(11)"))
+				if(!errorCause.includes("YouDontHaveThisNFT(11)")){
+					console.log(errorCause)
+				}
 			}
-		}
-		assert.ok(errorCause.includes("YouDontHaveThisNFT(11)"))
-		if(!errorCause.includes("YouDontHaveThisNFT(11)")){
-			console.log(errorCause)
 		}
 
 		errorCause = ''
 		try{
 			await auctionForUser.write.addLot([11n, 9000n, 2n, 1n, 3600n])
 		}
-		 catch(err){
+		 catch(err){ //The user has not approved any of the tokens, since the NFT approval check is performed first, a corresponding error will occur.
 			if(err instanceof BaseError){
 				errorCause = err.details
+				if(!errorCause.includes("NotApproved(11)")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('NotApproved(11)'));
 			}
 		}
-		if(!errorCause.includes("NotApproved(11)")){
-			console.log(errorCause)
-		}
-		assert.ok(errorCause.includes('NotApproved(11)'));
 
 		errorCause = ''
 		try{
 			await nftForUser.write.approve([auctionForUser.address, 11n])
 			await auctionForUser.write.addLot([11n, 9000n, 2000n, 1n, 3600n])
 		}
-		 catch(err){
+		 catch(err){ //The tokens required to pay the commission fee have not been approved.
 			if(err instanceof BaseError){
 				errorCause = err.details
+				if(!errorCause.includes("NotApproved(100)")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('NotApproved(100)'));
 			}
 		}
-		if(!errorCause.includes("RezultDiscountMoreThenBefinPrice()")){
-			console.log(errorCause)
-		}
-		assert.ok(errorCause.includes('RezultDiscountMoreThenBefinPrice()'));
 
+		errorCause = ''
+		try{
+			await nftForUser.write.approve([auctionForUser.address, 11n])
+			await tokenForUser.write.approve([auctionForUser.address, 1000n])
+			await auctionForUser.write.addLot([11n, 9000n, 2000n, 1n, 3600n])
+		}
+		 catch(err){ //The price should not go into the negative by the end of the lot due to too large of a decrease.
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("RezultDiscountMoreThenBefinPrice()")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('RezultDiscountMoreThenBefinPrice()'));
+			}
+		}
+
+		errorCause = ''
+		try{
+			await nftForUser.write.approve([auctionForUser.address, 11n])
+			await tokenForUser.write.approve([auctionForUser.address, 1000n])
+			await auctionForUser.write.addLot([11n, 0n, 2n, 1n, 3600n])
+		}
+		 catch(err){ //You cannot sell an NFT for free.
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("PriceCantBeZero()")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('PriceCantBeZero()'));
+			}
+		}
+
+		errorCause = ''
+		try{
+			await nftForUser.write.approve([auctionForUser.address, 11n])
+			await tokenForUser.write.approve([auctionForUser.address, 1000n])
+			await auctionForUser.write.addLot([11n, MAX_UINT256, 2000n, 1n, 3600n])
+		}
+		 catch(err){ //The price must not be equal to the maximum uint256 value, as this value is used for technical purposes.
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("PriceCantBeUint256Max()")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('PriceCantBeUint256Max()'));
+			}
+		}
 	})
 })
