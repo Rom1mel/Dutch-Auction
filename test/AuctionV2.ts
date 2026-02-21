@@ -325,51 +325,103 @@ describe("adding and after adding lot", async function(){
 		const blockTimeStemp = (await publicClient.getBlock()).timestamp
 		assert.equal(event.args.lotId, 0n)
 		assert.equal(event.args.timeStemp, blockTimeStemp)
-
 	})
-	// it('illegal purchase of the lot', async function(){
-	// 	const {auctionForBuyer, tokenForBuyer} = await deploymentWithLot()
-	// 	let errorCause = ''
-	// 	try{
-	// 		await auctionForBuyer.write.buyLot([1n])
-	// 	}
-	// 	 catch(err){ // You cannot buy a non-existent lot.
-	// 		if(err instanceof BaseError){
-	// 			errorCause = err.details
-	// 			if(!errorCause.includes("LotDoesNotExsist()")){
-	// 				console.log(errorCause)
-	// 			}
-	// 			assert.ok(errorCause.includes('LotDoesNotExsist()'));
-	// 		}
-	// 	}
+	it('The user can get their NFT back', async function(){
+		const {auctionForUser, tokenForUser, nftForUser, user, admin} = await deploymentWithLot()
+		const oldUserBalance = await tokenForUser.read.balanceOf([user.account.address])
 
-	// 	errorCause = ''
-	// 	try{
-	// 		await auctionForBuyer.write.buyLot([0n])
-	// 	}
-	// 	 catch(err){ // You cannot buy a lot without token approval.
-	// 		if(err instanceof BaseError){
-	// 			errorCause = err.details
-	// 			if(!errorCause.includes("NotApproved(9998)")){
-	// 				console.log(errorCause)
-	// 			}
-	// 			assert.ok(errorCause.includes('NotApproved(9998)'));
-	// 		}
-	// 	}
-	// 	await tokenForBuyer.write.approve([auctionForBuyer.address, 10000n])
+		await admin.mine({blocks: 100, interval: 60})
+		//Checking lot ststus
+		assert.equal(await auctionForUser.read.getLotStatus([0n]), 'Trading time is up.')
+		await auctionForUser.write.returnNFT([0n])
+		const lot = await auctionForUser.read.getLot([0n])
+		assert.equal(lot.finalPrice, 0n)
+		assert.ok(isAddressEqual(lot.buyer, zeroAddress))
+		// The balances is valid
+		assert.equal(await tokenForUser.read.balanceOf([user.account.address]), oldUserBalance)
+		assert.ok(isAddressEqual(await nftForUser.read.ownerOf([11n]), user.account.address))
+	})
+	it('illegal purchase of the lot', async function(){
+		const {auctionForBuyer, tokenForBuyer, tokenForUser, nftForUser, auctionForUser, admin, buyer, owner, tokenForOwner} = await deploymentWithLot()
+		let errorCause = ''
+		try{
+			await auctionForBuyer.write.buyLot([1n])
+		}
+		 catch(err){ // You cannot buy a non-existent lot.
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("LotDoesNotExsist()")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('LotDoesNotExsist()'));
+			}
+		}
+		await tokenForBuyer.write.transfer([owner.account.address, 7000n])
 
-	// 	errorCause = ''
-	// 	try{
-	// 		await auctionForBuyer.write.buyLot([0n])
-	// 	}
-	// 	 catch(err){ // You cannot buy a lot without token approval.
-	// 		if(err instanceof BaseError){
-	// 			errorCause = err.details
-	// 			if(!errorCause.includes("NotApproved(9998)")){
-	// 				console.log(errorCause)
-	// 			}
-	// 			assert.ok(errorCause.includes('NotApproved(9998)'));
-	// 		}
-	// 	}
-	// })
+		errorCause = ''
+		try{
+			await auctionForBuyer.write.buyLot([0n])
+		}
+		 catch(err){ // You cannot buy a lot if there are not enough tokens in the account.
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("LackOfFaunds()")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('LackOfFaunds()'));
+			}
+		}
+		await tokenForOwner.write.transfer([buyer.account.address, 7000n])
+
+		errorCause = ''
+		await admin.increaseTime({seconds: 5})
+		try{
+			await auctionForBuyer.write.buyLot([0n])
+		}
+		 catch(err){ // You cannot buy a lot without token approval.
+			if(err instanceof BaseError){
+				errorCause = err.details
+				const price = await auctionForBuyer.read.getPrice([0n]) + 1000n - 2n * 5n
+				const priceStr = price.toString();
+				if(!errorCause.includes("NotApproved(" + priceStr + ")")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes("NotApproved(" + price + ")"));
+			}
+		}
+		await tokenForBuyer.write.approve([auctionForBuyer.address, 10000n])
+		await auctionForUser.write.cancelLot([0n])
+
+		errorCause = ''
+		try{
+			await auctionForBuyer.write.buyLot([0n])
+		}
+		 catch(err){ // You cannot buy a canceled lot.
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("IncorrectActionForLotStatus(2, 0)")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('IncorrectActionForLotStatus(2, 0)'));
+			}
+		}
+		await tokenForUser.write.approve([auctionForUser.address, 100n])
+		await nftForUser.write.approve([auctionForUser.address, 11n])
+		await auctionForUser.write.addLot([11n, 9000n, 2n, 1n, 3600n])
+		await admin.mine({blocks: 200, interval: 100})
+
+		errorCause = ''
+		try{
+			await auctionForBuyer.write.buyLot([1n])
+		}
+		 catch(err){ // You cannot buy a expired lot.
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("IncorrectActionForLotStatus(3, 0)")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('IncorrectActionForLotStatus(3, 0)'));
+			}
+		}
+	})
 })
