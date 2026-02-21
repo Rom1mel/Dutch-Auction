@@ -77,6 +77,17 @@ async function deploymentWithBalances(){ // Deploys contracts and adds the user 
     auctionForUser, auctionForBuyer, tokenForOwner, tokenForUser,
     tokenForBuyer, nftForOwner, nftForUser, nftForBuyer }
 }
+async function deploymentWithLot(){ //Deploys the contract and adds a lot
+	const { publicClient, owner, user, buyer, admin ,auctionForOwner,
+    auctionForUser, auctionForBuyer, tokenForOwner, tokenForUser,
+    tokenForBuyer, nftForOwner, nftForUser, nftForBuyer } = await deploymentWithBalances()
+	await nftForUser.write.approve([auctionForBuyer.address, 11n])
+	await tokenForUser.write.approve([auctionForBuyer.address, 100n])
+	await auctionForUser.write.addLot([11n, 9000n, 2n, 1n, 3600n])
+	return { publicClient, owner, user, buyer, admin ,auctionForOwner,
+    auctionForUser, auctionForBuyer, tokenForOwner, tokenForUser,
+    tokenForBuyer, nftForOwner, nftForUser, nftForBuyer }
+}
 
 describe("befor adding lot", async function(){  //Сhecking the initial state of the contract.
     it("Correct Feeses", async function () { // Сhecking the fees set by the constructor
@@ -259,7 +270,7 @@ describe("adding and after adding lot", async function(){
 		}
 	})
 	it("The user can buy a lot", async function(){
-		const {auctionForBuyer, buyer, tokenForBuyer, user, publicClient} = await networkHelpers.loadFixture(deploymentWithBalances)
+		const {auctionForBuyer, buyer, tokenForBuyer, user, publicClient, nftForOwner} = await networkHelpers.loadFixture(deploymentWithBalances)
 		const oldUserBalance = await tokenForBuyer.read.balanceOf([user.account.address])
 		const oldBuyerBalance = await tokenForBuyer.read.balanceOf([buyer.account.address])
 		await tokenForBuyer.write.approve([auctionForBuyer.address, 10000n])
@@ -269,10 +280,13 @@ describe("adding and after adding lot", async function(){
 		const lot = await auctionForBuyer.read.getLot([0n])
 		assert.ok(isAddressEqual(lot.buyer, buyer.account.address))
 		assert.equal(lot.finalPrice, price)
+		// Checking lot status
+		assert.equal(await auctionForBuyer.read.getLotStatus([0n]), 'The lot was purchased.')
 		// The balances is valid
 		assert.equal(await tokenForBuyer.read.balanceOf([auctionForBuyer.address]), 1100n)
 		assert.equal(await tokenForBuyer.read.balanceOf([user.account.address]) - oldUserBalance, price)
 		assert.equal(oldBuyerBalance - await tokenForBuyer.read.balanceOf([buyer.account.address]), price + 1000n)
+		assert.ok(isAddressEqual(await nftForOwner.read.ownerOf([11n]), buyer.account.address))
 		// The buy event is valid
 		const [event] = await publicClient.getContractEvents({
 			address: auctionForBuyer.address,
@@ -287,4 +301,75 @@ describe("adding and after adding lot", async function(){
 		assert.equal(event.args.timeStemp, blockTimeStemp)
 		assert.ok(isAddressEqual(event.args.buyer as `0x${string}`, buyer.account.address))
 	})
+	it('The user can cancale lot', async function(){
+		const {auctionForUser, tokenForUser, nftForUser, user, publicClient} = await deploymentWithLot()
+		const oldUserBalance = await tokenForUser.read.balanceOf([user.account.address])
+
+		await auctionForUser.write.cancelLot([0n])
+		const lot = await auctionForUser.read.getLot([0n])
+		// The lot is valid
+		assert.equal(lot.beginPrice, MAX_UINT256)
+		// Checking lot status
+		assert.equal(await auctionForUser.read.getLotStatus([0n]), 'The lot was cancelled.')
+		// The balances is valid
+		assert.ok(isAddressEqual(await nftForUser.read.ownerOf([11n]), user.account.address))
+		assert.equal(await tokenForUser.read.balanceOf([user.account.address]), oldUserBalance)
+		// The cancel event is valid
+		const [event] = await publicClient.getContractEvents({
+			address: auctionForUser.address,
+			abi: auctionForUser.abi,
+			eventName: 'LotCanceled',
+			toBlock: 'latest',
+			fromBlock: 'latest'
+		})
+		const blockTimeStemp = (await publicClient.getBlock()).timestamp
+		assert.equal(event.args.lotId, 0n)
+		assert.equal(event.args.timeStemp, blockTimeStemp)
+
+	})
+	// it('illegal purchase of the lot', async function(){
+	// 	const {auctionForBuyer, tokenForBuyer} = await deploymentWithLot()
+	// 	let errorCause = ''
+	// 	try{
+	// 		await auctionForBuyer.write.buyLot([1n])
+	// 	}
+	// 	 catch(err){ // You cannot buy a non-existent lot.
+	// 		if(err instanceof BaseError){
+	// 			errorCause = err.details
+	// 			if(!errorCause.includes("LotDoesNotExsist()")){
+	// 				console.log(errorCause)
+	// 			}
+	// 			assert.ok(errorCause.includes('LotDoesNotExsist()'));
+	// 		}
+	// 	}
+
+	// 	errorCause = ''
+	// 	try{
+	// 		await auctionForBuyer.write.buyLot([0n])
+	// 	}
+	// 	 catch(err){ // You cannot buy a lot without token approval.
+	// 		if(err instanceof BaseError){
+	// 			errorCause = err.details
+	// 			if(!errorCause.includes("NotApproved(9998)")){
+	// 				console.log(errorCause)
+	// 			}
+	// 			assert.ok(errorCause.includes('NotApproved(9998)'));
+	// 		}
+	// 	}
+	// 	await tokenForBuyer.write.approve([auctionForBuyer.address, 10000n])
+
+	// 	errorCause = ''
+	// 	try{
+	// 		await auctionForBuyer.write.buyLot([0n])
+	// 	}
+	// 	 catch(err){ // You cannot buy a lot without token approval.
+	// 		if(err instanceof BaseError){
+	// 			errorCause = err.details
+	// 			if(!errorCause.includes("NotApproved(9998)")){
+	// 				console.log(errorCause)
+	// 			}
+	// 			assert.ok(errorCause.includes('NotApproved(9998)'));
+	// 		}
+	// 	}
+	// })
 })

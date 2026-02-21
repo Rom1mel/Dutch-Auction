@@ -143,7 +143,7 @@ contract Auction is IERC721Receiver, ERC165{
      * @return uint256 The current price of the lot (in EDU tokens)
      */
     function getPrice(uint256 _lotId) external view returns(uint256){
-        require(_lotId <= lotId, LotDoesNotExsist()); // Checking the correctness of the argument
+        require(_lotId < lotId, LotDoesNotExsist()); // Checking the correctness of the argument
         lotStatus _status = _lotStatus(_lotId);
         require(_status != lotStatus.canceled, LotWasCancelled(_lotId));
         if(_status == lotStatus.sold){
@@ -169,7 +169,7 @@ contract Auction is IERC721Receiver, ERC165{
      * @return lot A structure containing complete information about a lot
      */
     function getLot(uint256 _lotId) public view returns(Lot memory){
-        require(_lotId <= lotId, LotDoesNotExsist());
+        require(_lotId < lotId, LotDoesNotExsist());
         return lots[_lotId];
     }
     /**
@@ -177,7 +177,7 @@ contract Auction is IERC721Receiver, ERC165{
      * @return string A message explaining the current status of the lot.
      */
     function getLotStatus(uint256 _lotId) external view returns(string memory){
-        require(_lotId <= lotId, LotDoesNotExsist());
+        require(_lotId < lotId, LotDoesNotExsist());
         lotStatus _status = _lotStatus(_lotId);
         if(_status == lotStatus.active) { return "The lot is put up for sale.";}
         else if(_status == lotStatus.sold) { return "The lot was purchased.";}
@@ -229,7 +229,7 @@ contract Auction is IERC721Receiver, ERC165{
      * @param _lotId Identifier of the lot being purchased. The lot must exist and must not actived.
      */
     function buyLot(uint256 _lotId) external{
-        require(_lotId <= lotId, LotDoesNotExsist());
+        require(_lotId < lotId, LotDoesNotExsist());
         require(_lotStatus(_lotId) == lotStatus.active, IncorrectActionForLotStatus(_lotStatus(_lotId), lotStatus.active));
         uint256 finalPriceOfLot = _price(_lotId, false);
         //Checking the buyer's approval and balance.
@@ -251,7 +251,7 @@ contract Auction is IERC721Receiver, ERC165{
      * @param _lotId Identifier of the lot being purchased. The lot must exist and must be actived.
      */
     function cancelLot(uint256 _lotId) external{
-        require(_lotId <= lotId, LotDoesNotExsist());
+        require(_lotId < lotId, LotDoesNotExsist());
         require(_lotStatus(_lotId) == lotStatus.active, IncorrectActionForLotStatus(_lotStatus(_lotId), lotStatus.active));
         require(msg.sender == lots[_lotId].lotOwner, YouAreNotOwner());
         //Change of contract states.
@@ -266,7 +266,7 @@ contract Auction is IERC721Receiver, ERC165{
      * @param _lotId Identifier of the lot being purchased. The lot must exist and must be expired.
      */
     function returnNFT(uint256 _lotId) external{
-        require(_lotId <= lotId, LotDoesNotExsist());
+        require(_lotId < lotId, LotDoesNotExsist());
         require(_lotStatus(_lotId) == lotStatus.expired, IncorrectActionForLotStatus(_lotStatus(_lotId), lotStatus.expired));
         require(msg.sender == lots[_lotId].lotOwner, YouAreNotOwner());
 
