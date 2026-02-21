@@ -144,6 +144,8 @@ describe("adding and after adding lot", async function(){
 		assert.equal(lot.timeStemp, block.timestamp)
 		assert.ok(isAddressEqual(lot.lotOwner, user.account.address))
 		assert.ok(isAddressEqual(lot.buyer, zeroAddress))
+		// Checking lot status
+		assert.equal( await auctionForOwner.read.getLotStatus([0n]), 'The lot is put up for sale.')
 		//Event emission check
 		const [event] = await publicClient.getContractEvents({
   		address: auctionForOwner.address,
@@ -158,11 +160,11 @@ describe("adding and after adding lot", async function(){
 		assert.ok(isAddressEqual(event.args.lotOwner as `0x${string}`, user.account.address))
 	})
 	it("correct price", async function(){  // Checking that the price decreases over time.
-		const {admin, auctionForOwner, tokenForOwner} = await networkHelpers.loadFixture(deploymentWithBalances)
+		const {admin, auctionForOwner } = await networkHelpers.loadFixture(deploymentWithBalances)
 		await admin.mine({blocks: 7, interval: 1})
-        const oldPrise = await auctionForOwner.read.getCurrentPrice([0n])
+        const oldPrise = await auctionForOwner.read.getPrice([0n])
         await admin.mine({blocks: 1, interval: 1})
-        assert.equal(oldPrise - await auctionForOwner.read.getCurrentPrice([0n]), 2n)
+        assert.equal(oldPrise - await auctionForOwner.read.getPrice([0n]), 2n)
 	})
 	it("illegal lots", async function(){ //Checking scenarios where a user cannot add a lot.
 		const {auctionForUser, auctionForBuyer, nftForUser, tokenForUser} = await deploymentWithBalances()
@@ -255,5 +257,34 @@ describe("adding and after adding lot", async function(){
 				assert.ok(errorCause.includes('PriceCantBeUint256Max()'));
 			}
 		}
+	})
+	it("The user can buy a lot", async function(){
+		const {auctionForBuyer, buyer, tokenForBuyer, user, publicClient} = await networkHelpers.loadFixture(deploymentWithBalances)
+		const oldUserBalance = await tokenForBuyer.read.balanceOf([user.account.address])
+		const oldBuyerBalance = await tokenForBuyer.read.balanceOf([buyer.account.address])
+		await tokenForBuyer.write.approve([auctionForBuyer.address, 10000n])
+		await auctionForBuyer.write.buyLot([0n])
+		const price = await auctionForBuyer.read.getPrice([0n])
+		// The lot is valid
+		const lot = await auctionForBuyer.read.getLot([0n])
+		assert.ok(isAddressEqual(lot.buyer, buyer.account.address))
+		assert.equal(lot.finalPrice, price)
+		// The balances is valid
+		assert.equal(await tokenForBuyer.read.balanceOf([auctionForBuyer.address]), 1100n)
+		assert.equal(await tokenForBuyer.read.balanceOf([user.account.address]) - oldUserBalance, price)
+		assert.equal(oldBuyerBalance - await tokenForBuyer.read.balanceOf([buyer.account.address]), price + 1000n)
+		// The buy event is valid
+		const [event] = await publicClient.getContractEvents({
+			address: auctionForBuyer.address,
+			abi: auctionForBuyer.abi,
+			eventName: 'LotBought',
+			toBlock: 'latest',
+			fromBlock: 'latest'
+		})
+		const blockTimeStemp = (await publicClient.getBlock()).timestamp
+		assert.equal(event.args.lotId, 0n)
+		assert.equal(event.args.finalPrice, price)
+		assert.equal(event.args.timeStemp, blockTimeStemp)
+		assert.ok(isAddressEqual(event.args.buyer as `0x${string}`, buyer.account.address))
 	})
 })

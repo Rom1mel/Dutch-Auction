@@ -67,6 +67,7 @@ contract Auction is IERC721Receiver, ERC165{
     error AddressCantBeZero(); //Token address cannot be zero
     error RezultDiscountMoreThenBefinPrice(); // Total discount exceeds starting price
     error LotDoesNotExsist(); // Requested lot ID does not exist
+    error LotWasCancelled(uint256); //An attempt to get the price of a canceled lot (LotID)
     error IncorrectActionForLotStatus(lotStatus, lotStatus); // Еhe action is not possible due to the current status of the lot (current status, required status)
     error BalanceIsZero(); // Platform has zero balance of required token
     error LackOfFaunds(); // The user does not have enough tokens in their balance
@@ -137,13 +138,23 @@ contract Auction is IERC721Receiver, ERC165{
     }
 
     /**
-     * @dev Gets the current lot price, delegating its calculation to another function
+     * @dev Gets the current lot price, delegating its calculation to another function. The lot must not be canceled.
      * @param _lotId Identifier of the lot of interest
      * @return uint256 The current price of the lot (in EDU tokens)
      */
-    function getCurrentPrice(uint256 _lotId) external view returns(uint256){
+    function getPrice(uint256 _lotId) external view returns(uint256){
         require(_lotId <= lotId, LotDoesNotExsist()); // Checking the correctness of the argument
-        return _price(_lotId);
+        lotStatus _status = _lotStatus(_lotId);
+        require(_status != lotStatus.canceled, LotWasCancelled(_lotId));
+        if(_status == lotStatus.sold){
+            return lots[_lotId].finalPrice;
+        }
+        if(_status == lotStatus.expired){
+            return _price(_lotId, true);
+        }
+        else{
+            return _price(_lotId, false);
+        }
     }
 
     /**
@@ -220,7 +231,7 @@ contract Auction is IERC721Receiver, ERC165{
     function buyLot(uint256 _lotId) external{
         require(_lotId <= lotId, LotDoesNotExsist());
         require(_lotStatus(_lotId) == lotStatus.active, IncorrectActionForLotStatus(_lotStatus(_lotId), lotStatus.active));
-        uint256 finalPriceOfLot = _price(_lotId);
+        uint256 finalPriceOfLot = _price(_lotId, false);
         //Checking the buyer's approval and balance.
         require(EDUContract.balanceOf(msg.sender) >= fee + finalPriceOfLot, LackOfFaunds());
         require(EDUContract.allowance(msg.sender, address(this)) >= fee + finalPriceOfLot, NotApproved(fee + finalPriceOfLot));
@@ -286,11 +297,18 @@ contract Auction is IERC721Receiver, ERC165{
     /**
      * @dev Calculates the current price of the lot: 
      * starting price - ((current timestamp - lot creation timestamp) / discount period) * discount per period.
+     * If the lot was expired: starting price - discount per period * time to end / discount period (starting price - maximum discount)
      * @param _lotId Identifier of the lot of interest
+     * @param _isExpired Information on whether the lot is expired.
      * @return uint256 The current price of the lot (in EDU tokens)
      */
-    function _price(uint256 _lotId) internal view returns(uint256){
-        return lots[_lotId].beginPrice - ((block.timestamp - lots[_lotId].timeStemp)/lots[_lotId].periodOfDiscount * lots[_lotId].discount);
+    function _price(uint256 _lotId, bool _isExpired) internal view returns(uint256){
+        if (!_isExpired){
+            return lots[_lotId].beginPrice - ((block.timestamp - lots[_lotId].timeStemp)/lots[_lotId].periodOfDiscount * lots[_lotId].discount);
+        }
+        else{
+            return lots[_lotId].beginPrice - lots[_lotId].discount * lots[_lotId].timeToEnd / lots[_lotId].periodOfDiscount;
+        }
     }
     /**
      * @dev Sets a new commission when purchasing a lot. Available only to the owner.
