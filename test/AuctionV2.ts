@@ -424,4 +424,71 @@ describe("adding and after adding lot", async function(){
 			}
 		}
 	})
+	it("illegal canceled", async function(){
+		const {auctionForUser, user, nftForBuyer, tokenForBuyer, auctionForOwner, 
+		auctionForBuyer, admin, tokenForUser, nftForUser, buyer, publicClient} = await deploymentWithLot()
+		let errorCause = ''
+		try{
+			await auctionForUser.write.cancelLot([1n])
+		}
+		 catch(err){ // You cannot cancel nonexistent lot
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("LotDoesNotExsist()")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('LotDoesNotExsist()'));
+			}
+		}
+
+		errorCause = ''
+		try{
+			await auctionForOwner.write.cancelLot([0n])
+		}
+		 catch(err){ // You cannot cancel not yours lot
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("YouAreNotOwner()")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('YouAreNotOwner()'));
+			}
+		}
+
+		errorCause = ''
+		await tokenForBuyer.write.approve([auctionForBuyer.address, 10000n])
+		await auctionForBuyer.write.buyLot([0n])
+		try{
+			await auctionForUser.write.cancelLot([0n])
+		}
+		 catch(err){ // You cannot cancel bought lot
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("IncorrectActionForLotStatus(1, 0)")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('IncorrectActionForLotStatus(1, 0)'));
+			}
+		}
+
+		errorCause = ''
+		await tokenForUser.write.transfer([buyer.account.address, 6000n])
+		await tokenForBuyer.write.approve([auctionForBuyer.address, 10000n])
+		await nftForBuyer.write.approve([auctionForBuyer.address, 11n])
+		await auctionForBuyer.write.addLot([11n, 5000n, 1n, 1n, 100n])
+		const oldTimeStamp = (await publicClient.getBlock()).timestamp
+		await admin.mine({interval: 10, blocks: 1000})
+		try{
+			await auctionForBuyer.write.cancelLot([1n])
+		}
+		 catch(err){ // You cannot cancel lot if it time is up
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("IncorrectActionForLotStatus(3, 0)")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('IncorrectActionForLotStatus(3, 0)'));
+			}
+		}
+	})
 })
