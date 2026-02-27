@@ -425,8 +425,8 @@ describe("adding and after adding lot", async function(){
 		}
 	})
 	it("illegal canceled", async function(){
-		const {auctionForUser, user, nftForBuyer, tokenForBuyer, auctionForOwner, 
-		auctionForBuyer, admin, tokenForUser, nftForUser, buyer, publicClient} = await deploymentWithLot()
+		const {auctionForUser, nftForBuyer, tokenForBuyer, auctionForOwner, 
+		auctionForBuyer, admin, tokenForUser, buyer} = await deploymentWithLot()
 		let errorCause = ''
 		try{
 			await auctionForUser.write.cancelLot([1n])
@@ -476,7 +476,6 @@ describe("adding and after adding lot", async function(){
 		await tokenForBuyer.write.approve([auctionForBuyer.address, 10000n])
 		await nftForBuyer.write.approve([auctionForBuyer.address, 11n])
 		await auctionForBuyer.write.addLot([11n, 5000n, 1n, 1n, 100n])
-		const oldTimeStamp = (await publicClient.getBlock()).timestamp
 		await admin.mine({interval: 10, blocks: 1000})
 		try{
 			await auctionForBuyer.write.cancelLot([1n])
@@ -488,6 +487,84 @@ describe("adding and after adding lot", async function(){
 					console.log(errorCause)
 				}
 				assert.ok(errorCause.includes('IncorrectActionForLotStatus(3, 0)'));
+			}
+		}
+	})
+	it("illegal return NFTs", async function(){
+		const {auctionForUser, auctionForOwner, tokenForUser, nftForUser, auctionForBuyer, tokenForBuyer} = await deploymentWithLot()
+		let errorCause = ''
+		try{
+			await auctionForUser.write.returnNFT([1n])
+		}
+		 catch(err){ // You cannot return NFT from nonexistent lot
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("LotDoesNotExsist()")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('LotDoesNotExsist()'));
+			}
+		}
+
+		errorCause = ''
+		try{
+			await auctionForOwner.write.returnNFT([0n])
+		}
+		 catch(err){ // You cannot return NFT from not yours lot
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("YouAreNotOwner()")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('YouAreNotOwner()'));
+			}
+		}
+
+		errorCause = ''
+		try{
+			await auctionForUser.write.returnNFT([0n])
+		}
+		 catch(err){ // You cannot return NFT from active lot
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("IncorrectActionForLotStatus(0, 3)")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('IncorrectActionForLotStatus(0, 3)'));
+			}
+		}
+
+		errorCause = ''
+		await auctionForUser.write.cancelLot([0n])
+		try{
+			await auctionForUser.write.returnNFT([0n])
+		}
+		 catch(err){ // You cannot return NFT from canceled lot
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("IncorrectActionForLotStatus(2, 3")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('IncorrectActionForLotStatus(2, 3)'));
+			}
+		}
+
+		errorCause = ''
+		await tokenForUser.write.approve([auctionForOwner.address, 2000n])
+		await nftForUser.write.approve([auctionForOwner.address, 11n])
+		await auctionForUser.write.addLot([11n, 7000n, 1n, 1n, 120n])
+		await tokenForBuyer.write.approve([auctionForBuyer.address, 8500n])
+		await auctionForBuyer.write.buyLot([1n])
+		try{
+			await auctionForUser.write.returnNFT([1n])
+		}
+		 catch(err){ // You cannot return NFT from sold lot
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("IncorrectActionForLotStatus(1, 3")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('IncorrectActionForLotStatus(1, 3)'));
 			}
 		}
 	})

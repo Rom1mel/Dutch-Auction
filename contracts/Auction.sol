@@ -267,8 +267,8 @@ contract Auction is IERC721Receiver, ERC165{
      */
     function returnNFT(uint256 _lotId) external{
         require(_lotId < lotId, LotDoesNotExsist());
-        require(_lotStatus(_lotId) == lotStatus.expired, IncorrectActionForLotStatus(_lotStatus(_lotId), lotStatus.expired));
         require(msg.sender == lots[_lotId].lotOwner, YouAreNotOwner());
+        require(_lotStatus(_lotId) == lotStatus.expired, IncorrectActionForLotStatus(_lotStatus(_lotId), lotStatus.expired));
 
         NFTContract.safeTransferFrom(address(this), msg.sender, lots[_lotId].lotNFTsID);
     }
