@@ -568,4 +568,81 @@ describe("adding and after adding lot", async function(){
 			}
 		}
 	})
+	it("Owner of auction can claim fee", async function(){
+		const {auctionForOwner, owner, tokenForOwner} = await networkHelpers.loadFixture(deploymentWithLot)
+		const oldOwnerbalance = await tokenForOwner.read.balanceOf([owner.account.address])
+		const oldauctionBalance = await tokenForOwner.read.balanceOf([auctionForOwner.address])
+		
+		await auctionForOwner.write.wisdrow([20n])
+
+		assert.equal(await tokenForOwner.read.balanceOf([owner.account.address]) - oldOwnerbalance, 20n)
+		assert.equal(oldauctionBalance - await tokenForOwner.read.balanceOf([auctionForOwner.address]), 20n)
+
+		await auctionForOwner.write.wisdrowAll()
+
+		assert.equal(await tokenForOwner.read.balanceOf([owner.account.address]) - oldOwnerbalance, 100n)
+		assert.equal(oldauctionBalance - await tokenForOwner.read.balanceOf([auctionForOwner.address]), 100n)
+	})
+	it("illegal wisdrow", async function(){
+		const {auctionForBuyer, tokenForBuyer, auctionForOwner} = await networkHelpers.loadFixture(deploymentWithLot)
+		await tokenForBuyer.write.approve([auctionForBuyer.address, 10000n])
+		await auctionForBuyer.write.buyLot([0n])
+
+		let errorCause = ''
+		try{
+			await auctionForBuyer.write.wisdrow([500n])
+		}
+		 catch(err){ // Only owner can wisdrow
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("YouAreNotOwner()")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('YouAreNotOwner()'));
+			}
+		}
+
+		errorCause = ''
+		try{
+			await auctionForOwner.write.wisdrow([100000n])
+		}
+		 catch(err){ // You cant wisdrow more then the auction has
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("LackOfFaunds()")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('LackOfFaunds()'));
+			}
+		}
+
+		errorCause = ''
+		await auctionForOwner.write.wisdrowAll()
+		try{
+			await auctionForOwner.write.wisdrow([1000n])
+		}
+		 catch(err){ // You cant wisdrow if balance is zero
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("BalanceIsZero()")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('BalanceIsZero()'));
+			}
+		}
+
+		errorCause = ''
+		try{
+			await auctionForOwner.write.wisdrowAll()
+		}
+		 catch(err){ // You cant wisdrow if balance is zero
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("BalanceIsZero()")){
+					console.log(errorCause)
+				}
+				assert.ok(errorCause.includes('BalanceIsZero()'));
+			}
+		}
+	})
 })
