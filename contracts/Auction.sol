@@ -21,8 +21,8 @@ contract Auction is IERC721Receiver, ERC165{
     /**
      * @dev Token contract instances.
      */
-    EducationToken EDUContract;
-    NFTsLot NFTContract;
+    IERC20 private token;
+    IERC721 private nft;
 
     /**
      * @dev Contract state variables
@@ -40,6 +40,8 @@ contract Auction is IERC721Receiver, ERC165{
      * @dev Structure representing an auction lot
      */
     struct Lot{
+        address addressERC20; // The address of the token contract in which payment is accepted.
+        address addressERC721; // The address of the contract implementing the collection of this NFT.
         uint256 lotNFTsID; // ID of the NFT being auctioned
         address lotOwner; // Address of the lot creator (seller)
         uint256 beginPrice;  // Starting price of the lot (in EDU tokens)
@@ -75,8 +77,8 @@ contract Auction is IERC721Receiver, ERC165{
     error YouDontHaveThisNFT(uint256); // The user does not own this NFT
     error NotApproved(uint256); // Token transfer has not been approved for this contract (NFTsId or token amount)
     error BalanceMustBeZero(); // When changing the tokens with which the contract interacts, the balance of old tokens must be zero.
-    error NotAContract(address, address); //The addresses passed to the constructor are not contracts.
-    error NotAERC721(address); //The address passed to the constructor does not implement ERC721.
+    error NotAContract(IERC20, IERC721); //The addresses entered when creating a lot are not contract addresses.
+    error NotAERC721(IERC721); //The addresse entered when creating a lot is not implement ERC721.
 
     /**
      * @dev Events for tracking contract activity
@@ -96,24 +98,14 @@ contract Auction is IERC721Receiver, ERC165{
     /** 
         * @dev Sets the contract owner to the person who deployed it.
         * It also sets and verifies the correctness of commissions for buying and creating lots.
-        * Сreates instances of token contracts to interact with them.
-        * Checks if the specified addresses are contract addresses.
         * @param _fee Platform commission for buying lots (in EDU tokens)
         * @param _addingFee Platform commission for adding new lots (in EDU tokens)
-        * @param _EDU ERC20 token address. Cannot be 0.
-        * @param _NFT ERC721 token address. Cannot be 0. 
-        * A check is performed to determine whether the contract is an implementation of the standard ERC721.
     */
-    constructor (uint256 _fee, uint256 _addingFee, address _EDU, address _NFT){
+    constructor (uint256 _fee, uint256 _addingFee){
         require(_fee!=0 && _addingFee!=0, FeeCantBeZero());
-        require(_EDU != address(0) && _NFT != address(0), AddressCantBeZero());
         owner = msg.sender;
         addingFee = _addingFee; 
         fee = _fee;
-        EDUContract = EducationToken(_EDU);
-        NFTContract = NFTsLot(_NFT);
-        require(address(NFTContract).code.length != 0 && address(EDUContract).code.length != 0, NotAContract(_EDU,_NFT));
-        require(NFTContract.supportsInterface(type(IERC721).interfaceId) == true, NotAERC721(_NFT));
     } 
     
     /**
@@ -188,7 +180,10 @@ contract Auction is IERC721Receiver, ERC165{
     /**
      * @notice Creates a lot and puts the NFT up for sale. Charges a commission.
      * @dev Adds the created lot to the lots mapping. Transfers the sold NFT and the fee to contract balance.
-     * Requires token approval for both NFT and EDU tokens.
+     * Requires token approval for both NFT and ERC20 tokens.
+     * When creating instances, a check is performed to ensure the entered addresses are correct.
+     * @param _tokenAddress The address of the token contract in which payment is accepted.
+     * @param _NFTAddress The address of the contract implementing the collection of this NFT.
      * @param _usersNFT ID of the NFT listed for sale. Еhe user must own and approve the NFT
      * @param _beginPrice Starting price of the lot (in EDU tokens). Cannot be equal to 0 and Uint256Max
      * @param _discount Price decrease per discount period (in EDU tokens)
@@ -196,12 +191,14 @@ contract Auction is IERC721Receiver, ERC165{
      * @param _timeToEnd Total auction duration (in seconds)
      * @return lotId The identifier of the newly created lot.
      */
-    function addLot(uint256 _usersNFT, uint256 _beginPrice, uint256 _discount, uint256 _periodOfDiscount, uint256 _timeToEnd) external returns(uint256) {
-        require(NFTContract.ownerOf(_usersNFT) == msg.sender, YouDontHaveThisNFT(_usersNFT));
-        require(NFTContract.getApproved(_usersNFT) == address(this), NotApproved(_usersNFT));
+    function addLot(address _tokenAddress, address _NFTAddress, uint256 _usersNFT, uint256 _beginPrice, uint256 _discount,
+     uint256 _periodOfDiscount, uint256 _timeToEnd) external returns(uint256) {
+        (IERC20 _ERC20, IERC721 _ERC721) = _createInstance(_tokenAddress, _NFTAddress);
+        require(_ERC721.ownerOf(_usersNFT) == msg.sender, YouDontHaveThisNFT(_usersNFT));
+        require(_ERC721.getApproved(_usersNFT) == address(this), NotApproved(_usersNFT));
         //Checking the buyer's approval and balance.
-        require(EDUContract.balanceOf(msg.sender) >= addingFee, LackOfFaunds());
-        require(EDUContract.allowance(msg.sender, address(this)) >= addingFee, NotApproved(addingFee));
+        require(_ERC20.balanceOf(msg.sender) >= addingFee, LackOfFaunds());
+        require(_ERC20.allowance(msg.sender, address(this)) >= addingFee, NotApproved(addingFee));
 
         require(_beginPrice > 0, PriceCantBeZero());
         require(_beginPrice != type(uint256).max, PriceCantBeUint256Max());
@@ -210,11 +207,12 @@ contract Auction is IERC721Receiver, ERC165{
         //Change of contract states.
         address adressNull;
         uint256 finalPriceNull;
-        Lot memory _lot = Lot(_usersNFT, msg.sender, _beginPrice, _discount, _periodOfDiscount, block.timestamp, _timeToEnd, adressNull, finalPriceNull);
+        Lot memory _lot = Lot(_tokenAddress, _NFTAddress, _usersNFT, msg.sender, _beginPrice, _discount,
+         _periodOfDiscount, block.timestamp, _timeToEnd, adressNull, finalPriceNull);
         lots[lotId] = _lot;
         //charging a commission and transferring the NFT to the auction balance
-        EDUContract.transferFrom(msg.sender, address(this), addingFee);
-        NFTContract.safeTransferFrom(msg.sender, address(this), _usersNFT);
+        _ERC20.transferFrom(msg.sender, address(this), addingFee);
+        _ERC721.safeTransferFrom(msg.sender, address(this), _usersNFT);
         //Сreating a lot create event.
         emit LotAdded(lotId, msg.sender, _beginPrice, block.timestamp);
         //Сhanging the state variable responsible for the ID of the next lot.
@@ -232,16 +230,17 @@ contract Auction is IERC721Receiver, ERC165{
         require(_lotId < lotId, LotDoesNotExsist());
         require(_lotStatus(_lotId) == lotStatus.active, IncorrectActionForLotStatus(_lotStatus(_lotId), lotStatus.active));
         uint256 finalPriceOfLot = _price(_lotId, false);
+        (IERC20 _ERC20, IERC721 _ERC721) = _createInstanceUncheced(lots[_lotId].addressERC20, lots[_lotId].addressERC721);
         //Checking the buyer's approval and balance.
-        require(EDUContract.balanceOf(msg.sender) >= fee + finalPriceOfLot, LackOfFaunds());
-        require(EDUContract.allowance(msg.sender, address(this)) >= fee + finalPriceOfLot, NotApproved(fee + finalPriceOfLot));
+        require(_ERC20.balanceOf(msg.sender) >= fee + finalPriceOfLot, LackOfFaunds());
+        require(_ERC20.allowance(msg.sender, address(this)) >= fee + finalPriceOfLot, NotApproved(fee + finalPriceOfLot));
         //Change of contract states.
         lots[_lotId].buyer = msg.sender;
         lots[_lotId].finalPrice = finalPriceOfLot;
         //Charging a commission and payment. Transferring the NFT to the buyer.
-        EDUContract.transferFrom(msg.sender, address(this), fee);
-        EDUContract.transferFrom(msg.sender, lots[_lotId].lotOwner, finalPriceOfLot);
-        NFTContract.safeTransferFrom(address(this), msg.sender, lots[_lotId].lotNFTsID);
+        _ERC20.transferFrom(msg.sender, address(this), fee);
+        _ERC20.transferFrom(msg.sender, lots[_lotId].lotOwner, finalPriceOfLot);
+        _ERC721.safeTransferFrom(address(this), msg.sender, lots[_lotId].lotNFTsID);
         //Сreating a lot purchase event.
         emit LotBought(_lotId, msg.sender, finalPriceOfLot, block.timestamp);
     }
@@ -254,9 +253,10 @@ contract Auction is IERC721Receiver, ERC165{
         require(_lotId < lotId, LotDoesNotExsist());
         require(_lotStatus(_lotId) == lotStatus.active, IncorrectActionForLotStatus(_lotStatus(_lotId), lotStatus.active));
         require(msg.sender == lots[_lotId].lotOwner, YouAreNotOwner());
+        IERC721 _ERC721 = _createInstance721(lots[_lotId].addressERC721);
         //Change of contract states.
         lots[_lotId].beginPrice = type(uint256).max;
-        NFTContract.safeTransferFrom(address(this), msg.sender, lots[_lotId].lotNFTsID);
+        _ERC721.safeTransferFrom(address(this), msg.sender, lots[_lotId].lotNFTsID);
         //Сreating a lot cancel event.
         emit LotCanceled(_lotId, block.timestamp);
     }
@@ -269,8 +269,9 @@ contract Auction is IERC721Receiver, ERC165{
         require(_lotId < lotId, LotDoesNotExsist());
         require(msg.sender == lots[_lotId].lotOwner, YouAreNotOwner());
         require(_lotStatus(_lotId) == lotStatus.expired, IncorrectActionForLotStatus(_lotStatus(_lotId), lotStatus.expired));
+        IERC721 _ERC721 = _createInstance721(lots[_lotId].addressERC721);
 
-        NFTContract.safeTransferFrom(address(this), msg.sender, lots[_lotId].lotNFTsID);
+        _ERC721.safeTransferFrom(address(this), msg.sender, lots[_lotId].lotNFTsID);
     }
     /**
      * @dev Determines the current status of the lot:
@@ -311,6 +312,48 @@ contract Auction is IERC721Receiver, ERC165{
         }
     }
     /**
+     * @dev Creates contract instances by performing checks that the addresses are not zero and that they belong to contracts.
+     * @param _ERC20address  ERC20 token address.
+     * @param _NFTaddress ERC721 token address.
+     * @return Contract instances.
+     */
+    function _createInstance(address _ERC20address, address _NFTaddress) internal view returns(IERC20, IERC721){
+        require(_ERC20address != address(0) && _NFTaddress != address(0), AddressCantBeZero());
+        (IERC20 _ERC20, IERC721 _ERC721) = _createInstanceUncheced(_ERC20address, _NFTaddress);
+        require(address(_ERC20).code.length != 0 && address(_ERC721).code.length != 0, NotAContract(_ERC20, _ERC721));
+        require(_ERC721.supportsInterface(type(IERC721).interfaceId) == true, NotAERC721(_ERC721));
+        return (_ERC20, _ERC721);
+    }
+    /**
+     * @dev Creates contract instances without performing checks.
+     * @param _ERC20  ERC20 token address.
+     * @param _ERC721 ERC721 token address.
+     * @return Contract instances.
+     */
+    function _createInstanceUncheced(address _ERC20, address _ERC721) internal pure returns(IERC20, IERC721){
+        IERC20 erc20Instance = IERC20(_ERC20);
+        IERC721 erc721Instance = IERC721(_ERC721);
+        return (erc20Instance, erc721Instance);
+    }
+    /**
+     * @dev Creates instances of the ERC721 token contract without performing checks.
+     * @param _ERC721Address ERC721 token address.
+     * @return Contract instances of the ERC721 token.
+     */
+    function _createInstance721(address _ERC721Address) internal pure returns(IERC721){
+        IERC721 erc721Instance = IERC721(_ERC721Address);
+        return erc721Instance;
+    }
+    /**
+     * @dev Creates instances of the ERC20 token contract without performing checks.
+     * @param _ERC20Address ERC20 token address.
+     * @return Contract instances of the ERC20 token.
+     */
+    function _createInstance20(address _ERC20Address) internal pure returns(IERC20){
+        IERC20 erc20Instance = IERC20(_ERC20Address);
+        return erc20Instance;
+    }
+    /**
      * @dev Sets a new commission when purchasing a lot. Available only to the owner.
      * @param newFee New commission when purchasing a lot. Cannot be equal to zero
      */
@@ -328,21 +371,25 @@ contract Auction is IERC721Receiver, ERC165{
     }
 
     /**
-     * @dev Transfers the selected amount of earned commissions to the owner's address.
+     * @dev Transfers the selected amount of earned commissions in selected token to the owner's address.
+     * @param _tokenAddress The address of the token you want to withdraw.
      * @param value Amount to be transferred to the owner's balance.
      * You cannot select 0 or an amount greater than the current contract balance to transfer.
      */
-    function wisdrow(uint256 value) external onlyOwner{
-        require(EDUContract.balanceOf(address(this)) != 0, BalanceIsZero());
-        require(EDUContract.balanceOf(address(this)) >= value, LackOfFaunds());
-        EDUContract.transfer(owner, value);
+    function wisdrow(address _tokenAddress, uint256 value) external onlyOwner{
+        IERC20 _ERC20 = _createInstance20(_tokenAddress);
+        require(_ERC20.balanceOf(address(this)) != 0, BalanceIsZero());
+        require(_ERC20.balanceOf(address(this)) >= value, LackOfFaunds());
+        _ERC20.transfer(owner, value);
     }
     /**
-     * @dev Transfers the all of earned commissions to the owner's address. The contract balance must be greater than 0
+     * @dev Transfers the all of earned commissions in selected token to the owner's address. The contract balance must be greater than 0
+     * @param _tokenAddress The address of the token you want to withdraw.
      */
-    function wisdrowAll() external onlyOwner{
-        require(EDUContract.balanceOf(address(this)) != 0, BalanceIsZero());
-        EDUContract.transfer(owner, EDUContract.balanceOf(address(this)));
+    function wisdrowAll(address _tokenAddress) external onlyOwner{
+        IERC20 _ERC20 = _createInstance20(_tokenAddress);
+        require(_ERC20.balanceOf(address(this)) != 0, BalanceIsZero());
+        _ERC20.transfer(owner, _ERC20.balanceOf(address(this)));
     }
     /**
      * @dev Allows contract to accept safe NFT transfers.
