@@ -9,6 +9,9 @@ const { networkHelpers } = await hre.network.connect()
 const { viem } = await network.connect();
 const MAX_UINT256 = 2n ** 256n - 1n;
 
+//"NFTsLot", [owner.account?.address as `0x${string}`] - Function argument for the tests to work with the myNFT contract.
+//
+
 async function simpleDeploymentEDU(){  //deployment and creation of contract instances. 
 // Works with the EDU token; for the test to run for this token, it is necessary to remove EDU from the function name.
     const publicClient = await viem.getPublicClient()
@@ -72,7 +75,7 @@ async function deploymentWithBalances(){ // Deploys contracts and adds the user 
     })
     await tokenForOwner.write.mint([user.account.address, 10000n])
     await tokenForOwner.write.mint([buyer.account.address, 10000n])
-    await nftForOwner.write.safeMint([11n])
+    await nftForOwner.write.safeMint([owner.account.address, 11n])
     await nftForOwner.write.safeTransferFrom([owner.account.address, user.account.address, 11n])
     return { publicClient, owner, user, buyer, admin ,auctionForOwner,
     auctionForUser, auctionForBuyer, tokenForOwner, tokenForUser,
@@ -95,7 +98,7 @@ async function simpleDeployment(){  //deployment and creation of contract instan
     const publicClient = await viem.getPublicClient()
     const [owner, user, buyer] = await viem.getWalletClients()
     const admin = await viem.getTestClient()
-    const deployNFT = await viem.deployContract("NFTsLot", [owner.account?.address as `0x${string}`]) 
+    const deployNFT = await viem.deployContract("AnotherNFT", [owner.account.address]) 
     const deployToken = await viem.deployContract("AnotherToken",[owner.account.address])
     const nftForOwner = await getContract({
     address: deployNFT.address,
