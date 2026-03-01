@@ -321,7 +321,6 @@ contract Auction is IERC721Receiver, ERC165{
         require(_ERC20address != address(0) && _NFTaddress != address(0), AddressCantBeZero());
         (IERC20 _ERC20, IERC721 _ERC721) = _createInstanceUncheced(_ERC20address, _NFTaddress);
         require(address(_ERC20).code.length != 0 && address(_ERC721).code.length != 0, NotAContract(_ERC20, _ERC721));
-        require(_ERC721.supportsInterface(type(IERC721).interfaceId) == true, NotAERC721(_ERC721));
         return (_ERC20, _ERC721);
     }
     /**
