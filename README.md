@@ -34,7 +34,7 @@ Platform collects fees on successful auctions
 
 ✅ Local deployment working
 
-🔄 Documentation in progress
+✅ Write documentation
 
 ❌ Upgradeable Proxy pattern not implemented
 
