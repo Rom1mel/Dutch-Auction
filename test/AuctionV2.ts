@@ -9,7 +9,11 @@ const { networkHelpers } = await hre.network.connect()
 const { viem } = await network.connect();
 const MAX_UINT256 = 2n ** 256n - 1n;
 
-async function simpleDeployment(){  //deployment and creation of contract instances.
+//"NFTsLot", [owner.account?.address as `0x${string}`] - Function argument for the tests to work with the myNFT contract.
+//
+
+async function simpleDeploymentEDU(){  //deployment and creation of contract instances. 
+// Works with the EDU token; for the test to run for this token, it is necessary to remove EDU from the function name.
     const publicClient = await viem.getPublicClient()
     const [owner, user, buyer] = await viem.getWalletClients()
     const admin = await viem.getTestClient()
@@ -36,7 +40,7 @@ async function simpleDeployment(){  //deployment and creation of contract instan
     client: { public: publicClient, wallet: user }
     });
     const deployAuction = await viem.deployContract("Auction",
-    [1000n, 100n, deployToken.address, deployNFT.address] as [bigint, bigint, `0x${string}`, `0x${string}`])
+    [1000n, 100n] as [bigint, bigint])
     const auctionForOwner = await getContract({
         address: deployAuction.address,
         abi: deployAuction.abi,
@@ -51,7 +55,7 @@ async function simpleDeployment(){  //deployment and creation of contract instan
     auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser } //created instances of contracts and accounts.
 }
 
-async function deploymentWithBalances(){ // Deploys contracts and adds the user balances.
+async function deploymentWithBalances(){ // Deploys contracts and adds the user balances. 
     const { publicClient, owner, user, buyer, admin ,auctionForOwner,
     auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser } = await simpleDeployment()
     const auctionForBuyer = await getContract({
@@ -71,7 +75,7 @@ async function deploymentWithBalances(){ // Deploys contracts and adds the user 
     })
     await tokenForOwner.write.mint([user.account.address, 10000n])
     await tokenForOwner.write.mint([buyer.account.address, 10000n])
-    await nftForOwner.write.safeMint([11n])
+    await nftForOwner.write.safeMint([owner.account.address, 11n])
     await nftForOwner.write.safeTransferFrom([owner.account.address, user.account.address, 11n])
     return { publicClient, owner, user, buyer, admin ,auctionForOwner,
     auctionForUser, auctionForBuyer, tokenForOwner, tokenForUser,
@@ -83,11 +87,55 @@ async function deploymentWithLot(){ //Deploys the contract and adds a lot
     tokenForBuyer, nftForOwner, nftForUser, nftForBuyer } = await deploymentWithBalances()
 	await nftForUser.write.approve([auctionForBuyer.address, 11n])
 	await tokenForUser.write.approve([auctionForBuyer.address, 100n])
-	await auctionForUser.write.addLot([11n, 9000n, 2n, 1n, 3600n])
+	await auctionForUser.write.addLot([tokenForBuyer.address, nftForBuyer.address, 11n, 9000n, 2n, 1n, 3600n])
 	return { publicClient, owner, user, buyer, admin ,auctionForOwner,
     auctionForUser, auctionForBuyer, tokenForOwner, tokenForUser,
     tokenForBuyer, nftForOwner, nftForUser, nftForBuyer }
 }
+
+async function simpleDeployment(){  //deployment and creation of contract instances.
+	//Works with the MTK token; for the test to run for this token, it is necessary to remove MTK from the function name.
+    const publicClient = await viem.getPublicClient()
+    const [owner, user, buyer] = await viem.getWalletClients()
+    const admin = await viem.getTestClient()
+    const deployNFT = await viem.deployContract("AnotherNFT", [owner.account.address]) 
+    const deployToken = await viem.deployContract("AnotherToken",[owner.account.address])
+    const nftForOwner = await getContract({
+    address: deployNFT.address,
+    abi: deployNFT.abi,
+    client: { public: publicClient, wallet: owner }
+    });
+    const nftForUser = await getContract({
+    address: deployNFT.address,
+    abi: deployNFT.abi,
+    client: { public: publicClient, wallet: user }
+    });
+    const tokenForOwner = await getContract({
+    address: deployToken.address,
+    abi: deployToken.abi,
+    client: { public: publicClient, wallet: owner }
+    });
+    const tokenForUser = await getContract({
+    address: deployToken.address,
+    abi: deployToken.abi,
+    client: { public: publicClient, wallet: user }
+    });
+    const deployAuction = await viem.deployContract("Auction",
+    [1000n, 100n] as [bigint, bigint])
+    const auctionForOwner = await getContract({
+        address: deployAuction.address,
+        abi: deployAuction.abi,
+        client: { public: publicClient, wallet: owner} 
+    })
+    const auctionForUser = await getContract({
+        address: deployAuction.address,
+        abi: deployAuction.abi,
+        client: { public: publicClient, wallet: user}
+    })
+    return { publicClient, owner, user, buyer, admin ,auctionForOwner,
+    auctionForUser, tokenForOwner, tokenForUser, nftForOwner, nftForUser } //created instances of contracts and accounts.
+}
+
 
 describe("befor adding lot", async function(){  //Сhecking the initial state of the contract.
     it("Correct Feeses", async function () { // Сhecking the fees set by the constructor
@@ -138,7 +186,7 @@ describe("adding and after adding lot", async function(){
         nftForOwner, nftForUser} = await networkHelpers.loadFixture(deploymentWithBalances)
         await tokenForUser.write.approve([auctionForOwner.address, 5000n])
         await nftForUser.write.approve([auctionForOwner.address, 11n])
-        const lotId = await auctionForUser.write.addLot([11n, 9000n, 2n, 1n, 3600n])
+        const lotId = await auctionForUser.write.addLot([tokenForOwner.address, nftForOwner.address, 11n, 9000n, 2n, 1n, 3600n])
         //Checking the change in token balance.
         assert.equal(await tokenForOwner.read.balanceOf([auctionForOwner.address]), 100n)
         assert.equal(await tokenForOwner.read.balanceOf([user.account.address]), 9900n)
@@ -178,94 +226,156 @@ describe("adding and after adding lot", async function(){
         assert.equal(oldPrise - await auctionForOwner.read.getPrice([0n]), 2n)
 	})
 	it("illegal lots", async function(){ //Checking scenarios where a user cannot add a lot.
-		const {auctionForUser, auctionForBuyer, nftForUser, tokenForUser} = await deploymentWithBalances()
+		const {auctionForUser, auctionForBuyer, nftForUser, tokenForUser, user} = await deploymentWithBalances()
 		let errorCause = ''
+		let tryNumber = 1;
 		try{
-			await auctionForBuyer.write.addLot([11n, 9000n, 2n, 1n, 3600n])
+			await auctionForBuyer.write.addLot([tokenForUser.address, nftForUser.address, 11n, 9000n, 2n, 1n, 3600n])
 		} catch(err){  //You cannot list an NFT that is not yours for sale.
 			if(err instanceof BaseError){
 				errorCause = err.details
 				assert.ok(errorCause.includes("YouDontHaveThisNFT(11)"))
 				if(!errorCause.includes("YouDontHaveThisNFT(11)")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 			}
 		}
 
+		tryNumber = tryNumber + 1;
 		errorCause = ''
 		try{
-			await auctionForUser.write.addLot([11n, 9000n, 2n, 1n, 3600n])
+			await auctionForUser.write.addLot([tokenForUser.address, nftForUser.address, 11n, 9000n, 2n, 1n, 3600n])
 		}
 		 catch(err){ //The user has not approved any of the tokens, since the NFT approval check is performed first, a corresponding error will occur.
 			if(err instanceof BaseError){
 				errorCause = err.details
 				if(!errorCause.includes("NotApproved(11)")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('NotApproved(11)'));
 			}
 		}
 
+		tryNumber = tryNumber + 1;
 		errorCause = ''
+		await nftForUser.write.approve([auctionForUser.address, 11n])
 		try{
-			await nftForUser.write.approve([auctionForUser.address, 11n])
-			await auctionForUser.write.addLot([11n, 9000n, 2000n, 1n, 3600n])
+			await auctionForUser.write.addLot([tokenForUser.address, nftForUser.address, 11n, 9000n, 2n, 1n, 3600n])
 		}
 		 catch(err){ //The tokens required to pay the commission fee have not been approved.
 			if(err instanceof BaseError){
 				errorCause = err.details
 				if(!errorCause.includes("NotApproved(100)")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('NotApproved(100)'));
 			}
 		}
 
 		errorCause = ''
+		
+		tryNumber = tryNumber + 1;
+		await tokenForUser.write.approve([auctionForUser.address, 1000n])
 		try{
-			await nftForUser.write.approve([auctionForUser.address, 11n])
-			await tokenForUser.write.approve([auctionForUser.address, 1000n])
-			await auctionForUser.write.addLot([11n, 9000n, 2000n, 1n, 3600n])
+			await auctionForUser.write.addLot([tokenForUser.address, nftForUser.address, 11n, 1000n, 2n, 1n, 3600n])
 		}
 		 catch(err){ //The price should not go into the negative by the end of the lot due to too large of a decrease.
 			if(err instanceof BaseError){
 				errorCause = err.details
 				if(!errorCause.includes("RezultDiscountMoreThenBefinPrice()")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('RezultDiscountMoreThenBefinPrice()'));
 			}
 		}
 
+		tryNumber = tryNumber + 1;
 		errorCause = ''
+		await tokenForUser.write.approve([auctionForUser.address, 1000n])
 		try{
-			await nftForUser.write.approve([auctionForUser.address, 11n])
-			await tokenForUser.write.approve([auctionForUser.address, 1000n])
-			await auctionForUser.write.addLot([11n, 0n, 2n, 1n, 3600n])
+			await auctionForUser.write.addLot([tokenForUser.address, nftForUser.address, 11n, 0n, 2n, 1n, 3600n])
 		}
 		 catch(err){ //You cannot sell an NFT for free.
 			if(err instanceof BaseError){
 				errorCause = err.details
 				if(!errorCause.includes("PriceCantBeZero()")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('PriceCantBeZero()'));
 			}
 		}
 
+		tryNumber = tryNumber + 1;
 		errorCause = ''
 		try{
 			await nftForUser.write.approve([auctionForUser.address, 11n])
 			await tokenForUser.write.approve([auctionForUser.address, 1000n])
-			await auctionForUser.write.addLot([11n, MAX_UINT256, 2000n, 1n, 3600n])
+			await auctionForUser.write.addLot([tokenForUser.address, nftForUser.address, 11n, MAX_UINT256, 2000n, 1n, 3600n])
 		}
 		 catch(err){ //The price must not be equal to the maximum uint256 value, as this value is used for technical purposes.
 			if(err instanceof BaseError){
 				errorCause = err.details
 				if(!errorCause.includes("PriceCantBeUint256Max()")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('PriceCantBeUint256Max()'));
+			}
+		}
+		tryNumber = tryNumber + 1;
+		errorCause = ''
+		try{
+			await nftForUser.write.approve([auctionForUser.address, 11n])
+			await tokenForUser.write.approve([auctionForUser.address, 1000n])
+			await auctionForUser.write.addLot([zeroAddress, nftForUser.address, 11n, 9000n, 2000n, 1n, 3600n])
+		}
+		 catch(err){ //The contract address cannot be zero.
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes("AddressCantBeZero()")){
+					console.log(errorCause)
+					console.log(tryNumber)
+				}
+				assert.ok(errorCause.includes('AddressCantBeZero()'));
+			}
+		}
+		tryNumber = tryNumber + 1;
+		errorCause = ''
+		try{
+			await nftForUser.write.approve([auctionForUser.address, 11n])
+			await tokenForUser.write.approve([auctionForUser.address, 1000n])
+			await auctionForUser.write.addLot([tokenForUser.address, user.account.address, 11n, 9000n, 2000n, 1n, 3600n])
+		}
+		 catch(err){ //The address must belong to contract
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes('NotAContract("0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1", "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"')){
+					console.log(errorCause)
+					console.log(tryNumber)
+				}
+				assert.ok(errorCause.includes('NotAContract("0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1", "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"'));
+			}
+		}
+		tryNumber = tryNumber + 1;
+		errorCause = ''
+		try{
+			await nftForUser.write.approve([auctionForUser.address, 11n])
+			await tokenForUser.write.approve([auctionForUser.address, 1000n])
+			await auctionForUser.write.addLot([tokenForUser.address, tokenForUser.address, 11n, 9000n, 2000n, 1n, 3600n])
+		}
+		 catch(err){ //The address must belong to ERC721 contract
+			if(err instanceof BaseError){
+				errorCause = err.details
+				if(!errorCause.includes('function selector was not recognized')){
+					console.log(errorCause)
+					console.log(tryNumber)
+				}
+				assert.ok(errorCause.includes('function selector was not recognized'));
 			}
 		}
 	})
@@ -344,6 +454,7 @@ describe("adding and after adding lot", async function(){
 	it('illegal purchase of the lot', async function(){
 		const {auctionForBuyer, tokenForBuyer, tokenForUser, nftForUser, auctionForUser, admin, buyer, owner, tokenForOwner} = await deploymentWithLot()
 		let errorCause = ''
+		let tryNumber = 1;
 		try{
 			await auctionForBuyer.write.buyLot([1n])
 		}
@@ -352,6 +463,7 @@ describe("adding and after adding lot", async function(){
 				errorCause = err.details
 				if(!errorCause.includes("LotDoesNotExsist()")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('LotDoesNotExsist()'));
 			}
@@ -359,6 +471,7 @@ describe("adding and after adding lot", async function(){
 		await tokenForBuyer.write.transfer([owner.account.address, 7000n])
 
 		errorCause = ''
+		tryNumber = tryNumber + 1;
 		try{
 			await auctionForBuyer.write.buyLot([0n])
 		}
@@ -367,6 +480,7 @@ describe("adding and after adding lot", async function(){
 				errorCause = err.details
 				if(!errorCause.includes("LackOfFaunds()")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('LackOfFaunds()'));
 			}
@@ -374,6 +488,7 @@ describe("adding and after adding lot", async function(){
 		await tokenForOwner.write.transfer([buyer.account.address, 7000n])
 
 		errorCause = ''
+		tryNumber = tryNumber + 1;
 		await admin.increaseTime({seconds: 5})
 		try{
 			await auctionForBuyer.write.buyLot([0n])
@@ -385,6 +500,7 @@ describe("adding and after adding lot", async function(){
 				const priceStr = price.toString();
 				if(!errorCause.includes("NotApproved(" + priceStr + ")")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes("NotApproved(" + price + ")"));
 			}
@@ -393,6 +509,7 @@ describe("adding and after adding lot", async function(){
 		await auctionForUser.write.cancelLot([0n])
 
 		errorCause = ''
+		tryNumber = tryNumber + 1;
 		try{
 			await auctionForBuyer.write.buyLot([0n])
 		}
@@ -401,16 +518,18 @@ describe("adding and after adding lot", async function(){
 				errorCause = err.details
 				if(!errorCause.includes("IncorrectActionForLotStatus(2, 0)")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('IncorrectActionForLotStatus(2, 0)'));
 			}
 		}
 		await tokenForUser.write.approve([auctionForUser.address, 100n])
 		await nftForUser.write.approve([auctionForUser.address, 11n])
-		await auctionForUser.write.addLot([11n, 9000n, 2n, 1n, 3600n])
+		await auctionForUser.write.addLot([tokenForUser.address, nftForUser.address, 11n, 9000n, 2n, 1n, 3600n])
 		await admin.mine({blocks: 200, interval: 100})
 
 		errorCause = ''
+		tryNumber = tryNumber + 1;
 		try{
 			await auctionForBuyer.write.buyLot([1n])
 		}
@@ -419,6 +538,7 @@ describe("adding and after adding lot", async function(){
 				errorCause = err.details
 				if(!errorCause.includes("IncorrectActionForLotStatus(3, 0)")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('IncorrectActionForLotStatus(3, 0)'));
 			}
@@ -428,6 +548,7 @@ describe("adding and after adding lot", async function(){
 		const {auctionForUser, nftForBuyer, tokenForBuyer, auctionForOwner, 
 		auctionForBuyer, admin, tokenForUser, buyer} = await deploymentWithLot()
 		let errorCause = ''
+		let tryNumber = 1
 		try{
 			await auctionForUser.write.cancelLot([1n])
 		}
@@ -436,12 +557,14 @@ describe("adding and after adding lot", async function(){
 				errorCause = err.details
 				if(!errorCause.includes("LotDoesNotExsist()")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('LotDoesNotExsist()'));
 			}
 		}
 
 		errorCause = ''
+		tryNumber = tryNumber + 1;
 		try{
 			await auctionForOwner.write.cancelLot([0n])
 		}
@@ -450,12 +573,14 @@ describe("adding and after adding lot", async function(){
 				errorCause = err.details
 				if(!errorCause.includes("YouAreNotOwner()")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('YouAreNotOwner()'));
 			}
 		}
 
 		errorCause = ''
+		tryNumber = tryNumber + 1;
 		await tokenForBuyer.write.approve([auctionForBuyer.address, 10000n])
 		await auctionForBuyer.write.buyLot([0n])
 		try{
@@ -466,16 +591,18 @@ describe("adding and after adding lot", async function(){
 				errorCause = err.details
 				if(!errorCause.includes("IncorrectActionForLotStatus(1, 0)")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('IncorrectActionForLotStatus(1, 0)'));
 			}
 		}
 
 		errorCause = ''
+		tryNumber = tryNumber + 1;
 		await tokenForUser.write.transfer([buyer.account.address, 6000n])
 		await tokenForBuyer.write.approve([auctionForBuyer.address, 10000n])
 		await nftForBuyer.write.approve([auctionForBuyer.address, 11n])
-		await auctionForBuyer.write.addLot([11n, 5000n, 1n, 1n, 100n])
+		await auctionForBuyer.write.addLot([tokenForUser.address, nftForBuyer.address, 11n, 5000n, 1n, 1n, 100n])
 		await admin.mine({interval: 10, blocks: 1000})
 		try{
 			await auctionForBuyer.write.cancelLot([1n])
@@ -485,6 +612,7 @@ describe("adding and after adding lot", async function(){
 				errorCause = err.details
 				if(!errorCause.includes("IncorrectActionForLotStatus(3, 0)")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('IncorrectActionForLotStatus(3, 0)'));
 			}
@@ -493,6 +621,7 @@ describe("adding and after adding lot", async function(){
 	it("illegal return NFTs", async function(){
 		const {auctionForUser, auctionForOwner, tokenForUser, nftForUser, auctionForBuyer, tokenForBuyer} = await deploymentWithLot()
 		let errorCause = ''
+		let tryNumber = 1
 		try{
 			await auctionForUser.write.returnNFT([1n])
 		}
@@ -501,12 +630,14 @@ describe("adding and after adding lot", async function(){
 				errorCause = err.details
 				if(!errorCause.includes("LotDoesNotExsist()")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('LotDoesNotExsist()'));
 			}
 		}
 
 		errorCause = ''
+		tryNumber = tryNumber + 1;
 		try{
 			await auctionForOwner.write.returnNFT([0n])
 		}
@@ -515,12 +646,14 @@ describe("adding and after adding lot", async function(){
 				errorCause = err.details
 				if(!errorCause.includes("YouAreNotOwner()")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('YouAreNotOwner()'));
 			}
 		}
 
 		errorCause = ''
+		tryNumber = tryNumber + 1;
 		try{
 			await auctionForUser.write.returnNFT([0n])
 		}
@@ -529,12 +662,14 @@ describe("adding and after adding lot", async function(){
 				errorCause = err.details
 				if(!errorCause.includes("IncorrectActionForLotStatus(0, 3)")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('IncorrectActionForLotStatus(0, 3)'));
 			}
 		}
 
 		errorCause = ''
+		tryNumber = tryNumber + 1;
 		await auctionForUser.write.cancelLot([0n])
 		try{
 			await auctionForUser.write.returnNFT([0n])
@@ -544,15 +679,17 @@ describe("adding and after adding lot", async function(){
 				errorCause = err.details
 				if(!errorCause.includes("IncorrectActionForLotStatus(2, 3")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('IncorrectActionForLotStatus(2, 3)'));
 			}
 		}
 
 		errorCause = ''
+		tryNumber = tryNumber + 1;
 		await tokenForUser.write.approve([auctionForOwner.address, 2000n])
 		await nftForUser.write.approve([auctionForOwner.address, 11n])
-		await auctionForUser.write.addLot([11n, 7000n, 1n, 1n, 120n])
+		await auctionForUser.write.addLot([tokenForUser.address, nftForUser.address, 11n, 7000n, 1n, 1n, 120n])
 		await tokenForBuyer.write.approve([auctionForBuyer.address, 8500n])
 		await auctionForBuyer.write.buyLot([1n])
 		try{
@@ -563,6 +700,7 @@ describe("adding and after adding lot", async function(){
 				errorCause = err.details
 				if(!errorCause.includes("IncorrectActionForLotStatus(1, 3")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('IncorrectActionForLotStatus(1, 3)'));
 			}
@@ -573,12 +711,12 @@ describe("adding and after adding lot", async function(){
 		const oldOwnerbalance = await tokenForOwner.read.balanceOf([owner.account.address])
 		const oldauctionBalance = await tokenForOwner.read.balanceOf([auctionForOwner.address])
 		
-		await auctionForOwner.write.wisdrow([20n])
+		await auctionForOwner.write.wisdrow([tokenForOwner.address, 20n])
 
 		assert.equal(await tokenForOwner.read.balanceOf([owner.account.address]) - oldOwnerbalance, 20n)
 		assert.equal(oldauctionBalance - await tokenForOwner.read.balanceOf([auctionForOwner.address]), 20n)
 
-		await auctionForOwner.write.wisdrowAll()
+		await auctionForOwner.write.wisdrowAll([tokenForOwner.address])
 
 		assert.equal(await tokenForOwner.read.balanceOf([owner.account.address]) - oldOwnerbalance, 100n)
 		assert.equal(oldauctionBalance - await tokenForOwner.read.balanceOf([auctionForOwner.address]), 100n)
@@ -589,57 +727,65 @@ describe("adding and after adding lot", async function(){
 		await auctionForBuyer.write.buyLot([0n])
 
 		let errorCause = ''
+		let tryNumber = 1
 		try{
-			await auctionForBuyer.write.wisdrow([500n])
+			await auctionForBuyer.write.wisdrow([tokenForBuyer.address, 500n])
 		}
 		 catch(err){ // Only owner can wisdrow
 			if(err instanceof BaseError){
 				errorCause = err.details
 				if(!errorCause.includes("YouAreNotOwner()")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('YouAreNotOwner()'));
 			}
 		}
 
 		errorCause = ''
+		tryNumber = tryNumber + 1;
 		try{
-			await auctionForOwner.write.wisdrow([100000n])
+			await auctionForOwner.write.wisdrow([tokenForBuyer.address, 100000n])
 		}
 		 catch(err){ // You cant wisdrow more then the auction has
 			if(err instanceof BaseError){
 				errorCause = err.details
 				if(!errorCause.includes("LackOfFaunds()")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('LackOfFaunds()'));
 			}
 		}
 
 		errorCause = ''
-		await auctionForOwner.write.wisdrowAll()
+		tryNumber = tryNumber + 1;
+		await auctionForOwner.write.wisdrowAll([tokenForBuyer.address])
 		try{
-			await auctionForOwner.write.wisdrow([1000n])
+			await auctionForOwner.write.wisdrow([tokenForBuyer.address, 1000n])
 		}
 		 catch(err){ // You cant wisdrow if balance is zero
 			if(err instanceof BaseError){
 				errorCause = err.details
 				if(!errorCause.includes("BalanceIsZero()")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('BalanceIsZero()'));
 			}
 		}
 
 		errorCause = ''
+		tryNumber = tryNumber + 1;
 		try{
-			await auctionForOwner.write.wisdrowAll()
+			await auctionForOwner.write.wisdrowAll([tokenForBuyer.address])
 		}
 		 catch(err){ // You cant wisdrow if balance is zero
 			if(err instanceof BaseError){
 				errorCause = err.details
 				if(!errorCause.includes("BalanceIsZero()")){
 					console.log(errorCause)
+					console.log(tryNumber)
 				}
 				assert.ok(errorCause.includes('BalanceIsZero()'));
 			}
